@@ -1,0 +1,22 @@
+[package]
+name = "variant_access_derive"
+version = "0.0.1"
+authors = ["Jacob Turner <jacob@friendrat.com> "]
+edition = "2021"
+readme = "../README.md"
+description = "Prodedural macros for deriving From and TryFrom traits on enums."
+repository = "hhttps://github.com/friendrat/enum-conversion-derive"
+homepage = "https://github.com/friendrat/enum-conversion-derive"
+license = "GNU General Public License v3.0"
+categories = ["development-tools", "rust-patterns"]
+build = false
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = {version= "1.0", features=["derive"]}
+quote = "1.0"
+tera = "1"
+lazy_static = "1"
+variant_access_traits = "0.4.1"
