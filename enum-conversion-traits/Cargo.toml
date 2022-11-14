@@ -1,0 +1,16 @@
+[package][package]
+name = "variant_access_derive"
+version = "0.0.1"
+authors = ["Jacob Turner <jacob@friendrat.com> "]
+edition = "2021"
+readme = "../README.md"
+description = "Traits for converting between enums and the types in their variants.."
+repository = "hhttps://github.com/friendrat/enum-conversion-derive"
+homepage = "https://github.com/friendrat/enum-conversion-derive"
+license = "GNU General Public License v3.0"
+categories = ["development-tools", "rust-patterns"]
+build = false
+
+[lib]
+
+[dependencies]

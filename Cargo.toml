@@ -1,0 +1,21 @@
+[package]
+name = "enum-conversion"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jacob Turner <jacob@friendrat.com> "]
+readme = "README.md"
+description = "A set of traits and macros for deriving conversion traits between enums and the types in their variants."
+license = "GNU General Public Licence v3.0"
+categories = ["development-tools", "rust-patterns"]
+build = false
+
+[lib]
+proc-macro = true
+
+[workspace]
+members = [
+    "enum-conversion-derive",
+    "enum-conversion-traits",
+]
+
+[dependencies]
