@@ -264,7 +264,7 @@ mod test_impls {
             }
         "#,
         )
-            .expect("Test failed");
+        .expect("Test failed");
         let name = &ast.ident.to_string();
         let fullname = fetch_name_with_generic_params(&ast);
         let (impl_generics, where_clause) = fetch_impl_generics(&ast);
@@ -316,20 +316,28 @@ mod test_impls {
             }
         "#,
         )
-            .expect("Test failed");
+        .expect("Test failed");
         let name = ast.ident.to_string();
         let fullname = fetch_name_with_generic_params(&ast);
         let (impl_generics, where_clause) = fetch_impl_generics(&ast);
         let field_map = fetch_fields_from_enum(&ast);
         let tera = templater();
-        let output = impl_try_to(&name, &fullname, &where_clause, &impl_generics, &field_map, &tera);
+        let output = impl_try_to(
+            &name,
+            &fullname,
+            &where_clause,
+            &impl_generics,
+            &field_map,
+            &tera,
+        );
         let expected = "\nimpl< 'a , T > TryTo<Box < & 'a dyn Into < T > >> for Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = EnumConversionError;\n\n    fn try_to(self) -> std::result::Result<Self, Self::Error> {\n        value.get_variant()\n    }\n}\n\nimpl< 'a , T > TryTo<&Box < & 'a dyn Into < T > >> for &Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = EnumConversionError;\n\n    fn try_to(self) -> std::result::Result<Self, Self::Error> {\n        value.get_variant_ref()\n    }\n}\n\nimpl< 'a , T > TryTo<&mut Box < & 'a dyn Into < T > >> from &mut Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n\n    type Error = EnumConversionError;\n\n    fn try_to(self) -> std::result::Result<Self, Self::Error> {\n        value.get_variant_mut()\n    }\n}\n";
         assert_eq!(output, expected);
     }
 
     #[test]
     fn test_try_to_custom() {
-        let ast: DeriveInput = syn::parse_str(r#"
+        let ast: DeriveInput = syn::parse_str(
+            r#"
           #[EnumConv::TryTo(
                 Error: Box<dyn Error + 'static>,
                 |e| e.to_string().into()
@@ -342,15 +350,21 @@ mod test_impls {
             }
         "#,
         )
-            .expect("Test failed");
+        .expect("Test failed");
         let name = ast.ident.to_string();
         let fullname = fetch_name_with_generic_params(&ast);
         let (impl_generics, where_clause) = fetch_impl_generics(&ast);
         let field_map = fetch_fields_from_enum(&ast);
         let tera = templater();
-        let output = impl_try_to(&name, &fullname, &where_clause, &impl_generics, &field_map, &tera);
+        let output = impl_try_to(
+            &name,
+            &fullname,
+            &where_clause,
+            &impl_generics,
+            &field_map,
+            &tera,
+        );
         let expected = "\nimpl< 'a , T > TryTo<Box < & 'a dyn Into < T > >> for Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_to(self) -> std::result::Result<Self, Self::Error> {\n        value.get_variant().map_err(| e | e . to_string () . into ())\n    }\n}\n\nimpl< 'a , T > TryTo<&Box < & 'a dyn Into < T > >> for &Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_to(self) -> std::result::Result<Self, Self::Error> {\n        value.get_variant_ref().map_err(| e | e . to_string () . into ())\n    }\n}\n\nimpl< 'a , T > TryTo<&mut Box < & 'a dyn Into < T > >> from &mut Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_to(self) -> std::result::Result<Self, Self::Error> {\n        value.get_variant_mut().map_err(| e | e . to_string () . into ())\n    }\n}\n";
         assert_eq!(output, expected);
     }
-
 }

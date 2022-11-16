@@ -146,8 +146,8 @@ pub fn get_marker(name: &str, field: &str) -> String {
 
 #[cfg(test)]
 mod test_parsers {
-    use crate::parse_attributes::ErrorConfig;
     use super::*;
+    use crate::parse_attributes::ErrorConfig;
 
     const ENUM: &str = r#"
             enum Enum<'a, T, U: Debug>
@@ -190,56 +190,75 @@ mod test_parsers {
 
     #[test]
     fn test_global_try_from_config() {
-        let ast: DeriveInput = syn::parse_str(r#"
+        let ast: DeriveInput = syn::parse_str(
+            r#"
             #[EnumConv::TryFrom]
             enum Enum {
                 F1(i64),
                 F2(bool),
             }
-        "#).expect("Test failed");
+        "#,
+        )
+        .expect("Test failed");
         let fields = fetch_fields_from_enum(&ast);
         let expected: HashMap<String, VariantInfo> = HashMap::from([
-            ("F1".to_string(), VariantInfo {
-                ty: "i64".to_string(),
-                attrs: VariantAttrs{
-                    try_from: Some(ErrorConfig::Default),
-                    try_to:ErrorConfig::Default}
-            }),
-            ("F2".to_string(), VariantInfo {
-                ty: "bool".to_string(),
-                attrs: VariantAttrs{
-                    try_from: Some(ErrorConfig::Default),
-                    try_to:ErrorConfig::Default}
-            }),
+            (
+                "F1".to_string(),
+                VariantInfo {
+                    ty: "i64".to_string(),
+                    attrs: VariantAttrs {
+                        try_from: Some(ErrorConfig::Default),
+                        try_to: ErrorConfig::Default,
+                    },
+                },
+            ),
+            (
+                "F2".to_string(),
+                VariantInfo {
+                    ty: "bool".to_string(),
+                    attrs: VariantAttrs {
+                        try_from: Some(ErrorConfig::Default),
+                        try_to: ErrorConfig::Default,
+                    },
+                },
+            ),
         ]);
         assert_eq!(fields, expected);
     }
 
     #[test]
     fn test_try_from_local_config() {
-        let ast: DeriveInput = syn::parse_str(r#"
+        let ast: DeriveInput = syn::parse_str(
+            r#"
             enum Enum {
                 F1(i64),
                 #[EnumConv::TryFrom]
                 F2(bool),
             }
-        "#).expect("Test failed");
+        "#,
+        )
+        .expect("Test failed");
         let fields = fetch_fields_from_enum(&ast);
         let expected: HashMap<String, VariantInfo> = HashMap::from([
             ("F1".to_string(), "i64".into()),
-            ("F2".to_string(), VariantInfo {
-                ty: "bool".to_string(),
-                attrs: VariantAttrs{
-                    try_from: Some(ErrorConfig::Default),
-                    try_to:ErrorConfig::Default}
-            }),
+            (
+                "F2".to_string(),
+                VariantInfo {
+                    ty: "bool".to_string(),
+                    attrs: VariantAttrs {
+                        try_from: Some(ErrorConfig::Default),
+                        try_to: ErrorConfig::Default,
+                    },
+                },
+            ),
         ]);
         assert_eq!(fields, expected);
     }
 
     #[test]
     fn test_try_from_overwrite() {
-        let ast: DeriveInput = syn::parse_str(r#"
+        let ast: DeriveInput = syn::parse_str(
+            r#"
             #[EnumConv::TryFrom(
                 Error: Box<dyn Error + 'static>,
                 |e| e.to_string().into()
@@ -249,31 +268,42 @@ mod test_parsers {
                 #[EnumConv::TryFrom]
                 F2(bool),
             }
-        "#).expect("Test failed");
+        "#,
+        )
+        .expect("Test failed");
         let fields = fetch_fields_from_enum(&ast);
         let expected: HashMap<String, VariantInfo> = HashMap::from([
-            ("F1".to_string(),  VariantInfo {
-                ty: "i64".to_string(),
-                attrs: VariantAttrs{
-                    try_from: Some(ErrorConfig::Custom {
-                        error_ty: "Box < dyn Error + 'static >".to_string(),
-                        map_err: "| e | e . to_string () . into ()".to_string()
-                    }),
-                    try_to:ErrorConfig::Default}
-            }),
-            ("F2".to_string(), VariantInfo {
-                ty: "bool".to_string(),
-                attrs: VariantAttrs{
-                    try_from: Some(ErrorConfig::Default),
-                    try_to:ErrorConfig::Default}
-            }),
+            (
+                "F1".to_string(),
+                VariantInfo {
+                    ty: "i64".to_string(),
+                    attrs: VariantAttrs {
+                        try_from: Some(ErrorConfig::Custom {
+                            error_ty: "Box < dyn Error + 'static >".to_string(),
+                            map_err: "| e | e . to_string () . into ()".to_string(),
+                        }),
+                        try_to: ErrorConfig::Default,
+                    },
+                },
+            ),
+            (
+                "F2".to_string(),
+                VariantInfo {
+                    ty: "bool".to_string(),
+                    attrs: VariantAttrs {
+                        try_from: Some(ErrorConfig::Default),
+                        try_to: ErrorConfig::Default,
+                    },
+                },
+            ),
         ]);
         assert_eq!(fields, expected);
     }
 
     #[test]
     fn test_try_to_overwrite() {
-        let ast: DeriveInput = syn::parse_str(r#"
+        let ast: DeriveInput = syn::parse_str(
+            r#"
             #[EnumConv::TryTo(
                 Error: Box<dyn Error + 'static>,
                 |e| e.to_string().into()
@@ -283,24 +313,34 @@ mod test_parsers {
                 #[EnumConv::TryTo]
                 F2(bool),
             }
-        "#).expect("Test failed");
+        "#,
+        )
+        .expect("Test failed");
         let fields = fetch_fields_from_enum(&ast);
         let expected: HashMap<String, VariantInfo> = HashMap::from([
-            ("F1".to_string(),  VariantInfo {
-                ty: "i64".to_string(),
-                attrs: VariantAttrs{
-                    try_from: None,
-                    try_to: ErrorConfig::Custom {
-                        error_ty: "Box < dyn Error + 'static >".to_string(),
-                        map_err: "| e | e . to_string () . into ()".to_string()
-                    }}
-            }),
-            ("F2".to_string(), VariantInfo {
-                ty: "bool".to_string(),
-                attrs: VariantAttrs{
-                    try_from: None,
-                    try_to:ErrorConfig::Default}
-            }),
+            (
+                "F1".to_string(),
+                VariantInfo {
+                    ty: "i64".to_string(),
+                    attrs: VariantAttrs {
+                        try_from: None,
+                        try_to: ErrorConfig::Custom {
+                            error_ty: "Box < dyn Error + 'static >".to_string(),
+                            map_err: "| e | e . to_string () . into ()".to_string(),
+                        },
+                    },
+                },
+            ),
+            (
+                "F2".to_string(),
+                VariantInfo {
+                    ty: "bool".to_string(),
+                    attrs: VariantAttrs {
+                        try_from: None,
+                        try_to: ErrorConfig::Default,
+                    },
+                },
+            ),
         ]);
         assert_eq!(fields, expected);
     }

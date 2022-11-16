@@ -181,7 +181,7 @@ fn parse_attr_args(arg: Expr) -> ErrorConfigParam {
                     type_expr.to_token_stream(),
                 )
             }
-        },
+        }
         Expr::Closure(closure) => ErrorConfigParam::MapErr(closure.to_token_stream().to_string()),
         _ => panic!(
             "Attribute macros for EnumConversions must either be of the form: \
