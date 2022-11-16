@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Write as _;
 
 use quote::ToTokens;
 use syn::Data;
@@ -26,7 +27,7 @@ pub fn fetch_name_with_generic_params(ast: &DeriveInput) -> String {
             syn::GenericParam::Lifetime(life_def) => life_def.lifetime.to_token_stream(),
             syn::GenericParam::Const(constant) => constant.ident.to_token_stream(),
         };
-        param_string.push_str(&format!("{},", next));
+        _ = write!(param_string, "{},", next);
     }
     param_string.pop();
     if !param_string.is_empty() {
@@ -132,7 +133,7 @@ pub(crate) fn create_marker_enums(name: &str, types: &HashMap<String, VariantInf
     let mut piece = format!("#[allow(non_snake_case]\n mod enum___conversion___{}", name);
     piece.push_str("{ ");
     for field in types.keys() {
-        piece.push_str(&format!("pub(crate) enum {}{{}}", field));
+        _ = write!(piece, "pub(crate) enum {}{{}}", field);
     }
     piece.push('}');
     piece
