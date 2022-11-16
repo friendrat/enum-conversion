@@ -1,5 +1,5 @@
 [package]
-name = "variant_access_derive"
+name = "enum-conversion-derive"
 version = "0.0.1"
 authors = ["Jacob Turner <jacob@friendrat.com> "]
 edition = "2021"
@@ -15,8 +15,9 @@ build = false
 proc-macro = true
 
 [dependencies]
-syn = {version= "1.0", features=["derive"]}
+proc-macro2 = "1.0.47"
+syn = {version= "1.0", features=["full", "extra-traits"]}
 quote = "1.0"
 tera = "1"
 lazy_static = "1"
-variant_access_traits = "0.4.1"
+enum-conversion-traits = { path = "../enum-conversion-traits" }

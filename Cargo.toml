@@ -1,6 +1,6 @@
 [package]
 name = "enum-conversion"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 authors = ["Jacob Turner <jacob@friendrat.com> "]
 readme = "README.md"
@@ -19,3 +19,5 @@ members = [
 ]
 
 [dependencies]
+enum-conversion-derive = {path = "enum-conversion-derive"}
+enum-conversion-traits = {path = "enum-conversion-traits"}

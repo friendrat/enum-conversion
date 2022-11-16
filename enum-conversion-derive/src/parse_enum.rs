@@ -1,16 +1,20 @@
-use super::*;
-use quote::ToTokens;
 use std::collections::HashMap;
+
+use quote::ToTokens;
 use syn::Data;
+
+use super::*;
+use crate::parse_attributes::{parse_attrs, VariantAttrs, VariantInfo};
 
 /// This functions determines the name of the enum with generic
 /// params attached.
 ///
 /// # Example
 /// ```
+/// use std::fmt::Debug;
 /// enum Enum<'a, T: 'a + Debug, const X: usize> {
-///     F1(T),
-///     F2(X)
+///     F1(&'a T),
+///     F2([T; X])
 /// }
 /// ```
 /// This function should return `Enum<'a, T, X>`
@@ -37,6 +41,7 @@ pub fn fetch_name_with_generic_params(ast: &DeriveInput) -> String {
 ///
 /// # Example:
 /// ```
+/// use std::fmt::Debug;
 /// pub enum Enum<T: Debug, U>
 ///where
 ///     U: Into<T>
@@ -68,10 +73,12 @@ pub fn fetch_impl_generics(ast: &DeriveInput) -> (String, String) {
 ///  * Enums with unit variants.
 ///
 /// Will panic if the input type is not an enum.
-pub fn fetch_fields_from_enum(ast: &DeriveInput) -> HashMap<String, String> {
+pub(crate) fn fetch_fields_from_enum(ast: &DeriveInput) -> HashMap<String, VariantInfo> {
     if let Data::Enum(data) = &ast.data {
         let mut num_fields: usize = 0;
-        let mut types = data.variants
+        let global = parse_attrs(&ast.attrs, VariantAttrs::default());
+        let mut types = data
+            .variants
             .iter()
             .map(|var| match &var.fields {
                 syn::Fields::Unnamed(field_) => {
@@ -81,7 +88,8 @@ pub fn fetch_fields_from_enum(ast: &DeriveInput) -> HashMap<String, String> {
                              not contain multiple fields."
                         );
                     }
-                    let field_ty = field_
+                    let var_attrs = parse_attrs(&var.attrs, global.clone());
+                    let var_ty = field_
                         .unnamed
                         .iter()
                         .next()
@@ -89,9 +97,13 @@ pub fn fetch_fields_from_enum(ast: &DeriveInput) -> HashMap<String, String> {
                         .ty
                         .to_token_stream()
                         .to_string();
-                    let field_name = var.ident.to_token_stream().to_string();
+                    let var_name = var.ident.to_token_stream().to_string();
+                    let var_info = VariantInfo {
+                        ty: var_ty,
+                        attrs: var_attrs,
+                    };
                     num_fields += 1;
-                    (field_ty, field_name)
+                    (var_info, var_name)
                 }
                 syn::Fields::Named(_) => {
                     panic!("Can only derive for enums whose types do not have named fields.")
@@ -100,8 +112,8 @@ pub fn fetch_fields_from_enum(ast: &DeriveInput) -> HashMap<String, String> {
                     panic!("Can only derive for enums who don't contain unit types as variants.")
                 }
             })
-            .collect::<HashMap<String, String>>();
-        let types: HashMap<String, String> = types.drain().map(|(k, v)| (v, k)).collect();
+            .collect::<HashMap<VariantInfo, String>>();
+        let types: HashMap<String, VariantInfo> = types.drain().map(|(k, v)| (v, k)).collect();
         if types.keys().len() != num_fields {
             panic!("Cannot derive for enums with more than one field with the same type.")
         }
@@ -116,7 +128,7 @@ pub fn fetch_fields_from_enum(ast: &DeriveInput) -> HashMap<String, String> {
 ///
 /// Used to identify types in the enum and disambiguate
 /// generic parameters.
-pub fn create_marker_enums(name: &str, types: &HashMap<String, String>) -> String {
+pub(crate) fn create_marker_enums(name: &str, types: &HashMap<String, VariantInfo>) -> String {
     let mut piece = format!("#[allow(non_snake_case]\n mod enum___conversion___{}", name);
     piece.push_str("{ ");
     for field in types.keys() {
@@ -132,9 +144,9 @@ pub fn get_marker(name: &str, field: &str) -> String {
     format!("enum___conversion___{}::{}", name, field)
 }
 
-
 #[cfg(test)]
 mod test_parsers {
+    use crate::parse_attributes::ErrorConfig;
     use super::*;
 
     const ENUM: &str = r#"
@@ -160,17 +172,137 @@ mod test_parsers {
     fn test_parse_fields_and_types() {
         let ast: DeriveInput = syn::parse_str(ENUM).expect("Test failed.");
         let fields = fetch_fields_from_enum(&ast);
-        let expected = HashMap::from([
-            ("Array".to_string(), "[u8 ; 20]".to_string()),
-            ("BareFn".to_string(), "fn (& 'a usize) -> bool".to_string()),
-            ("Macro".to_string(), "typey ! ()".to_string()),
-            ("Path".to_string(), "< Vec < & 'a mut T > as IntoIterator > :: Item".to_string()),
-            ("Ptr".to_string(), "* const u8".to_string()),
-            ("Slice".to_string(), "[u8]".to_string()),
-            ("Trait".to_string(), "Box < & dyn Into < U > >".to_string()),
-            ("Tuple".to_string(), "(& 'a i64 , bool)".to_string()),
+        let expected: HashMap<String, VariantInfo> = HashMap::from([
+            ("Array".to_string(), "[u8 ; 20]".into()),
+            ("BareFn".to_string(), "fn (& 'a usize) -> bool".into()),
+            ("Macro".to_string(), "typey ! ()".into()),
+            (
+                "Path".to_string(),
+                "< Vec < & 'a mut T > as IntoIterator > :: Item".into(),
+            ),
+            ("Ptr".to_string(), "* const u8".into()),
+            ("Slice".to_string(), "[u8]".into()),
+            ("Trait".to_string(), "Box < & dyn Into < U > >".into()),
+            ("Tuple".to_string(), "(& 'a i64 , bool)".into()),
         ]);
         assert_eq!(expected, fields);
+    }
+
+    #[test]
+    fn test_global_try_from_config() {
+        let ast: DeriveInput = syn::parse_str(r#"
+            #[EnumConv::TryFrom]
+            enum Enum {
+                F1(i64),
+                F2(bool),
+            }
+        "#).expect("Test failed");
+        let fields = fetch_fields_from_enum(&ast);
+        let expected: HashMap<String, VariantInfo> = HashMap::from([
+            ("F1".to_string(), VariantInfo {
+                ty: "i64".to_string(),
+                attrs: VariantAttrs{
+                    try_from: Some(ErrorConfig::Default),
+                    try_to:ErrorConfig::Default}
+            }),
+            ("F2".to_string(), VariantInfo {
+                ty: "bool".to_string(),
+                attrs: VariantAttrs{
+                    try_from: Some(ErrorConfig::Default),
+                    try_to:ErrorConfig::Default}
+            }),
+        ]);
+        assert_eq!(fields, expected);
+    }
+
+    #[test]
+    fn test_try_from_local_config() {
+        let ast: DeriveInput = syn::parse_str(r#"
+            enum Enum {
+                F1(i64),
+                #[EnumConv::TryFrom]
+                F2(bool),
+            }
+        "#).expect("Test failed");
+        let fields = fetch_fields_from_enum(&ast);
+        let expected: HashMap<String, VariantInfo> = HashMap::from([
+            ("F1".to_string(), "i64".into()),
+            ("F2".to_string(), VariantInfo {
+                ty: "bool".to_string(),
+                attrs: VariantAttrs{
+                    try_from: Some(ErrorConfig::Default),
+                    try_to:ErrorConfig::Default}
+            }),
+        ]);
+        assert_eq!(fields, expected);
+    }
+
+    #[test]
+    fn test_try_from_overwrite() {
+        let ast: DeriveInput = syn::parse_str(r#"
+            #[EnumConv::TryFrom(
+                Error: Box<dyn Error + 'static>,
+                |e| e.to_string().into()
+            )]
+            enum Enum {
+                F1(i64),
+                #[EnumConv::TryFrom]
+                F2(bool),
+            }
+        "#).expect("Test failed");
+        let fields = fetch_fields_from_enum(&ast);
+        let expected: HashMap<String, VariantInfo> = HashMap::from([
+            ("F1".to_string(),  VariantInfo {
+                ty: "i64".to_string(),
+                attrs: VariantAttrs{
+                    try_from: Some(ErrorConfig::Custom {
+                        error_ty: "Box < dyn Error + 'static >".to_string(),
+                        map_err: "| e | e . to_string () . into ()".to_string()
+                    }),
+                    try_to:ErrorConfig::Default}
+            }),
+            ("F2".to_string(), VariantInfo {
+                ty: "bool".to_string(),
+                attrs: VariantAttrs{
+                    try_from: Some(ErrorConfig::Default),
+                    try_to:ErrorConfig::Default}
+            }),
+        ]);
+        assert_eq!(fields, expected);
+    }
+
+    #[test]
+    fn test_try_to_overwrite() {
+        let ast: DeriveInput = syn::parse_str(r#"
+            #[EnumConv::TryTo(
+                Error: Box<dyn Error + 'static>,
+                |e| e.to_string().into()
+            )]
+            enum Enum {
+                F1(i64),
+                #[EnumConv::TryTo]
+                F2(bool),
+            }
+        "#).expect("Test failed");
+        let fields = fetch_fields_from_enum(&ast);
+        let expected: HashMap<String, VariantInfo> = HashMap::from([
+            ("F1".to_string(),  VariantInfo {
+                ty: "i64".to_string(),
+                attrs: VariantAttrs{
+                    try_from: None,
+                    try_to: ErrorConfig::Custom {
+                        error_ty: "Box < dyn Error + 'static >".to_string(),
+                        map_err: "| e | e . to_string () . into ()".to_string()
+                    }}
+            }),
+            ("F2".to_string(), VariantInfo {
+                ty: "bool".to_string(),
+                attrs: VariantAttrs{
+                    try_from: None,
+                    try_to:ErrorConfig::Default}
+            }),
+        ]);
+        assert_eq!(fields, expected);
     }
 
     #[test]
@@ -191,55 +323,71 @@ mod test_parsers {
     #[test]
     #[should_panic(expected = "Can only derive for enums.")]
     fn test_panic_on_struct() {
-        let ast = syn::parse_str(
-            "pub struct Struct;"
-        ).expect("Test failed");
+        let ast = syn::parse_str("pub struct Struct;").expect("Test failed");
         _ = fetch_fields_from_enum(&ast);
     }
 
     #[test]
     #[should_panic(expected = "Can only derive for enums whose types do not have named fields.")]
     fn test_panic_on_field_with_named_types() {
-        let ast = syn::parse_str(r#"
+        let ast = syn::parse_str(
+            r#"
             enum Enum {
                 F{a: i64},
             }
-        "#).expect("Test failed");
+        "#,
+        )
+        .expect("Test failed");
         _ = fetch_fields_from_enum(&ast);
     }
 
     #[test]
-    #[should_panic(expected = "Cannot derive for enums with more than one field with the same type.")]
+    #[should_panic(
+        expected = "Cannot derive for enums with more than one field with the same type."
+    )]
     fn test_multiple_fields_same_type() {
-        let ast = syn::parse_str(r#"
+        let ast = syn::parse_str(
+            r#"
         enum Enum {
             F1(u64),
             F2(u64),
         }
-        "#).expect("Test failed");
+        "#,
+        )
+        .expect("Test failed");
         _ = fetch_fields_from_enum(&ast);
     }
 
     #[test]
-    #[should_panic(expected = "Can only derive for enums whose types do not contain multiple fields.")]
+    #[should_panic(
+        expected = "Can only derive for enums whose types do not contain multiple fields."
+    )]
     fn test_multiple_types_in_field() {
-        let ast = syn::parse_str(r#"
+        let ast = syn::parse_str(
+            r#"
             enum Enum {
                 Field(i64, bool),
             }
-        "#).expect("Test failed");
+        "#,
+        )
+        .expect("Test failed");
         _ = fetch_fields_from_enum(&ast);
     }
 
     #[test]
-    #[should_panic(expected = "Can only derive for enums who don't contain unit types as variants.")]
+    #[should_panic(
+        expected = "Can only derive for enums who don't contain unit types as variants."
+    )]
     fn test_unit_type() {
-        let ast = syn::parse_str(r#"
+        let ast = syn::parse_str(
+            r#"
             enum Enum {
                 Some(bool),
                 None,
             }
-        "#).expect("Test failed");
+        "#,
+        )
+        .expect("Test failed");
         _ = fetch_fields_from_enum(&ast);
     }
 
@@ -253,13 +401,19 @@ mod test_parsers {
 
     #[test]
     fn test_create_marker_structs() {
-        let ast = syn::parse_str(r#"
+        let ast = syn::parse_str(
+            r#"
             enum Enum {
                 F1(u64)
             }
-        "#).expect("Test failed.");
+        "#,
+        )
+        .expect("Test failed.");
         let fields = fetch_fields_from_enum(&ast);
-        let output = create_marker_enums(&ast.ident.to_string(), &fields );
-        assert_eq!(output, "#[allow(non_snake_case]\n mod enum___conversion___Enum{ pub(crate) enum F1{}}");
+        let output = create_marker_enums(&ast.ident.to_string(), &fields);
+        assert_eq!(
+            output,
+            "#[allow(non_snake_case]\n mod enum___conversion___Enum{ pub(crate) enum F1{}}"
+        );
     }
 }

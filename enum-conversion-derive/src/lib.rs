@@ -1,6 +1,7 @@
+mod impls;
+mod parse_attributes;
 mod parse_enum;
 mod templates;
-mod impls;
 
 extern crate proc_macro;
 
@@ -31,28 +32,46 @@ fn impl_conversions(ast: &DeriveInput) -> TokenStream {
     let field_map = fetch_fields_from_enum(ast);
 
     tokens.extend::<TokenStream>(create_marker_enums(name, &field_map).parse().unwrap());
-    tokens.extend::<TokenStream>(impls::impl_get_variant(
-        name,
-        &fullname,
-        &where_clause,
-        &impl_generics,
-        &field_map,
-        &tera,
-    ).parse().unwrap());
-    tokens.extend::<TokenStream>(impls::impl_try_from(
-        name,
-        &fullname,
-        &where_clause,
-        &impl_generics,
-        &field_map,
-        &tera,
-    ).parse().unwrap());
-    tokens.extend::<TokenStream>(impls::impl_from(
-        &fullname,
-        &where_clause,
-        &impl_generics,
-        &field_map,
-        &tera,
-    ).parse().unwrap());
+    tokens.extend::<TokenStream>(
+        impls::impl_get_variant(
+            name,
+            &fullname,
+            &where_clause,
+            &impl_generics,
+            &field_map,
+            &tera,
+        )
+        .parse()
+        .unwrap(),
+    );
+    tokens.extend::<TokenStream>(
+        impls::impl_try_from(
+            name,
+            &fullname,
+            &where_clause,
+            &impl_generics,
+            &field_map,
+            &tera,
+        )
+        .parse()
+        .unwrap(),
+    );
+    tokens.extend::<TokenStream>(
+        impls::impl_try_to(
+            name,
+            &fullname,
+            &where_clause,
+            &impl_generics,
+            &field_map,
+            &tera,
+        )
+        .parse()
+        .unwrap(),
+    );
+    tokens.extend::<TokenStream>(
+        impls::impl_from(&fullname, &where_clause, &impl_generics, &field_map, &tera)
+            .parse()
+            .unwrap(),
+    );
     tokens
 }

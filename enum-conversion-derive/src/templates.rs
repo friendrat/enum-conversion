@@ -6,35 +6,69 @@ pub(crate) fn templater() -> Tera {
         .unwrap();
     tera.add_raw_template("try_from", TRY_FROM_TEMPLATE)
         .unwrap();
+    tera.add_raw_template("try_to", TRY_TO_TEMPLATE).unwrap();
     tera.add_raw_template("from", FROM_TEMPLATE).unwrap();
     tera
 }
 
 pub(crate) const GET_VARIANT_TEMPLATE: &str = r#"
-impl{{ generics }} variant_access_traits::GetVariant<{{ Type }}, {{ Marker }} > for {{ fullname }}
+impl{{ generics }} enum_conversion_traits::GetVariant<{{ Type }}, {{ Marker }} > for {{ fullname }}
 {{ Where }} {
     #[allow(unreachable_patterns)]
-    fn get_variant(self) -> std::result::Result<{{ Type }}, variant_access_traits::VariantAccessError> {
+    fn get_variant(self) -> std::result::Result<{{ Type }}, enum_conversion_traits::EnumConversionError> {
         match self {
             {{ name }}::{{ field }}(inner) => Ok(inner),
-            _ => Err(variant_access_traits::VariantAccessError::wrong_active_field("{{ fullname }}", "{{ Type }}"))
+            _ => Err(enum_conversion_traits::EnumConversionError::new("{{ fullname }}", "{{ Type }}"))
         }
     }
 
     #[allow(unreachable_patterns)]
-    fn get_variant_ref(&self) -> std::result::Result<&{{ Type }}, variant_access_traits::VariantAccessError> {
+    fn get_variant_ref(&self) -> std::result::Result<&{{ Type }}, enum_conversion_traits::EnumConversionError> {
         match &self {
             {{ name }}::{{ field }}(inner) => Ok(inner),
-            _ => Err(variant_access_traits::VariantAccessError::wrong_active_field("{{ fullname }}", "{{ Type }}"))
+            _ => Err(enum_conversion_traits::EnumConversionError::new("{{ fullname }}", "{{ Type }}"))
         }
     }
 
     #[allow(unreachable_patterns)]
-    fn get_variant_mut(&mut self) -> std::result::Result<&mut {{ Type }}, variant_access_traits::VariantAccessError> {
+    fn get_variant_mut(&mut self) -> std::result::Result<&mut {{ Type }}, enum_conversion_traits::EnumConversionError> {
         match self {
             {{ name }}::{{ field }}(inner) => Ok(inner),
-            _  => Err(variant_access_traits::VariantAccessError::wrong_active_field("{{ fullname }}", "{{ Type }}"))
+            _  => Err(enum_conversion_traits::EnumConversionError::new("{{ fullname }}", "{{ Type }}"))
         }
+    }
+}
+"#;
+
+pub(crate) const TRY_TO_TEMPLATE: &str = r#"
+impl{{ generics }} TryTo<{{ Type }}> for {{ fullname }}
+{{ Where }}
+{
+    type Error = {{ Error }};
+
+    fn try_to(self) -> std::result::Result<Self, Self::Error> {
+        value.get_variant(){{ Map_Err }}
+    }
+}
+
+impl{{ generics }} TryTo<&{{ Type }}> for &{{ fullname }}
+{{ Where }}
+{
+    type Error = {{ Error }};
+
+    fn try_to(self) -> std::result::Result<Self, Self::Error> {
+        value.get_variant_ref(){{ Map_Err }}
+    }
+}
+
+impl{{ generics }} TryTo<&mut {{ Type }}> from &mut {{ fullname }}
+{{ Where }}
+{
+
+    type Error = {{ Error }};
+
+    fn try_to(self) -> std::result::Result<Self, Self::Error> {
+        value.get_variant_mut(){{ Map_Err }}
     }
 }
 "#;
@@ -43,18 +77,39 @@ pub(crate) const TRY_FROM_TEMPLATE: &str = r#"
 impl{{ generics }} TryFrom<{{ fullname }}> for {{ Type }}
 {{ Where }}
 {
-    type Error = Box<dyn Error + 'static>;
+    type Error = {{ Error }};
 
     fn try_from(value: {{ fullname }}) -> std::result::Result<Self, Self::Error> {
-        value.get_variant().map_err(|e| e.to_string().into())
+        value.try_to(){{ Map_Err }}
     }
-}"#;
+}
+
+impl{{ generics }} TryFrom<&{{ fullname }}> for &{{ Type }}
+{{ Where }}
+{
+    type Error = {{ Error }};
+
+    fn try_from(value: &{{ fullname }}) -> std::result::Result<Self, Self::Error> {
+        value.try_to(){{ Map_Err }}
+
+    }
+}
+
+impl{{ generics }} TryFrom<&mut {{ fullname }}> for &mut {{ Type }}
+{{ Where }}
+{
+    type Error = {{ Error }};
+
+    fn try_from(value: &mut {{ fullname }}) -> std::result::Result<Self, Self::Error> {
+        value.try_to(){{ Map_Err }}
+    }
+}
+"#;
 
 pub(crate) const FROM_TEMPLATE: &str = r#"
 impl{{ generics }} From<{{ Type }}> for {{ fullname }}
 {{ Where }}
 {
-
     fn from(value: {{ Type }}) -> Self {
         Self::{{ field }}(value)
     }

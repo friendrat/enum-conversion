@@ -1,5 +1,5 @@
-[package][package]
-name = "variant_access_derive"
+[package]
+name = "enum-conversion-traits"
 version = "0.0.1"
 authors = ["Jacob Turner <jacob@friendrat.com> "]
 edition = "2021"
