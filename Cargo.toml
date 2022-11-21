@@ -19,5 +19,6 @@ members = [
 ]
 
 [dependencies]
+syn = {version= "1.0.103", features=["derive", "extra-traits"]}
 enum-conversion-derive = {path = "enum-conversion-derive"}
 enum-conversion-traits = {path = "enum-conversion-traits"}

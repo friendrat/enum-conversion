@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 
 use quote::ToTokens;
-use syn::Data;
+use syn::__private::Span;
+use syn::{Data, GenericParam, Lifetime, LifetimeDef, Token};
 
 use super::*;
 use crate::parse_attributes::{parse_attrs, VariantAttrs, VariantInfo};
@@ -18,22 +19,27 @@ use crate::parse_attributes::{parse_attrs, VariantAttrs, VariantInfo};
 ///     F2([T; X])
 /// }
 /// ```
-/// This function should return `Enum<'a, T, X>`
-pub fn fetch_name_with_generic_params(ast: &DeriveInput) -> String {
+/// This function should return `(Enum<'a, T, X>, vec!['a])`
+pub fn fetch_name_with_generic_params(ast: &DeriveInput) -> (String, Vec<String>) {
     let mut param_string = String::new();
+    let mut lifetimes = vec![];
     for param in ast.generics.params.iter() {
         let next = match param {
             syn::GenericParam::Type(type_) => type_.ident.to_token_stream(),
-            syn::GenericParam::Lifetime(life_def) => life_def.lifetime.to_token_stream(),
+            syn::GenericParam::Lifetime(life_def) => {
+                let lifetime = life_def.lifetime.to_token_stream();
+                lifetimes.push(lifetime.to_string());
+                lifetime
+            }
             syn::GenericParam::Const(constant) => constant.ident.to_token_stream(),
         };
         _ = write!(param_string, "{},", next);
     }
     param_string.pop();
     if !param_string.is_empty() {
-        format!("{}<{}>", ast.ident, param_string)
+        (format!("{}<{}>", ast.ident, param_string), lifetimes)
     } else {
-        ast.ident.to_string()
+        (ast.ident.to_string(), lifetimes)
     }
 }
 
@@ -52,16 +58,53 @@ pub fn fetch_name_with_generic_params(ast: &DeriveInput) -> String {
 /// }
 /// ```
 /// returns `("<T: Debug, U>", "where U: Into<T>")`.
-pub fn fetch_impl_generics(ast: &DeriveInput) -> (String, String) {
+///
+/// For traits the return references, the lifetime of the reference must be bound
+/// by lifetimes in the definition of the enum.
+pub fn fetch_impl_generics(ast: &DeriveInput, lifetime: &str, bounds: &[String]) -> (String, String, String) {
     let mut generics = ast.generics.clone();
+    let mut generics_ref = generics.clone();
+    generics_ref
+        .params
+        .push(GenericParam::Lifetime(bound_lifetime(&lifetime, bounds)));
+
     let where_clause = generics
         .where_clause
         .take()
         .map(|w| w.to_token_stream().to_string());
     (
         generics.to_token_stream().to_string(),
+        generics_ref.to_token_stream().to_string(),
         where_clause.unwrap_or_default(),
     )
+}
+
+/// Given a lifetime and a list of other lifetimes, creates
+/// the bound that states the input lifetime cannot outlive
+/// the lifetimes in the list.
+///
+/// # Example:
+/// ```
+/// let lifetime = "a";
+/// let bounds = vec!["b".into(), "c".into()];
+/// let bound = bound_lifetime(lifetime, bounds);
+/// assert_eq!(bound.to_token_stream().to_string(), "'a : 'b + 'c")
+/// ```
+pub fn bound_lifetime(lifetime: &str, bounds: &[String]) -> syn::LifetimeDef {
+    let mut lifetime_def = LifetimeDef::new(Lifetime::new(
+        &lifetime,
+        Span::call_site(),
+    ));
+    lifetime_def.colon_token = if bounds.is_empty() {
+        Some(Token![:](Span::call_site()))
+    } else {
+        None
+    };
+    lifetime_def.bounds = bounds
+        .iter()
+        .map(|lifetime| Lifetime::new(lifetime, Span::call_site()))
+        .collect();
+    lifetime_def
 }
 
 /// Fetches the name of each variant in the enum and
@@ -130,7 +173,7 @@ pub(crate) fn fetch_fields_from_enum(ast: &DeriveInput) -> HashMap<String, Varia
 /// Used to identify types in the enum and disambiguate
 /// generic parameters.
 pub(crate) fn create_marker_enums(name: &str, types: &HashMap<String, VariantInfo>) -> String {
-    let mut piece = format!("#[allow(non_snake_case]\n mod enum___conversion___{}", name);
+    let mut piece = format!("#[allow(non_snake_case)]\n mod enum___conversion___{}", name);
     piece.push_str("{ ");
     for field in types.keys() {
         _ = write!(piece, "pub(crate) enum {}{{}}", field);
@@ -151,7 +194,7 @@ mod test_parsers {
     use crate::parse_attributes::ErrorConfig;
 
     const ENUM: &str = r#"
-            enum Enum<'a, T, U: Debug>
+            enum Enum<'a, 'b, T, U: Debug>
             where T: Into<U>, U: 'a
             {
                 #[help]
@@ -160,7 +203,7 @@ mod test_parsers {
                 Macro(typey!()),
                 Path(<Vec<&'a mut T> as IntoIterator>::Item),
                 Ptr(*const u8),
-                Tuple((&'a i64, bool)),
+                Tuple((&'b i64, bool)),
                 Slice([u8]),
                 Trait(Box<&dyn Into<U>>),
             }
@@ -184,7 +227,7 @@ mod test_parsers {
             ("Ptr".to_string(), "* const u8".into()),
             ("Slice".to_string(), "[u8]".into()),
             ("Trait".to_string(), "Box < & dyn Into < U > >".into()),
-            ("Tuple".to_string(), "(& 'a i64 , bool)".into()),
+            ("Tuple".to_string(), "(& 'b i64 , bool)".into()),
         ]);
         assert_eq!(expected, fields);
     }
@@ -349,16 +392,19 @@ mod test_parsers {
     #[test]
     fn test_generics_and_bounds() {
         let ast: DeriveInput = syn::parse_str(ENUM).expect("Test failed.");
-        let (generics, where_clause) = fetch_impl_generics(&ast);
-        assert_eq!(generics, "< 'a , T , U : Debug >");
+        let (_, lifetimes) = fetch_name_with_generic_params(&ast);
+        let (generics, generics_ref, where_clause) = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifetimes);
+        assert_eq!(generics, "< 'a , 'b , T , U : Debug >");
+        assert_eq!(generics_ref, "< 'a , 'b , 'enum_conv : 'a + 'b , T , U : Debug , >");
         assert_eq!(where_clause, "where T : Into < U > , U : 'a");
     }
 
     #[test]
     fn test_get_name_with_generics() {
         let ast: DeriveInput = syn::parse_str(ENUM).expect("Test failed.");
-        let name = fetch_name_with_generic_params(&ast);
-        assert_eq!(name, "Enum<'a,T,U>")
+        let (name, lifetimes) = fetch_name_with_generic_params(&ast);
+        assert_eq!(name, "Enum<'a,'b,T,U>");
+        assert_eq!(lifetimes, vec![String::from("'a"), String::from("'b")]);
     }
 
     #[test]

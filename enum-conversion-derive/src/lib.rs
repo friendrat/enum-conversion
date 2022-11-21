@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use syn::DeriveInput;
 use tera::{Context, Tera};
 
+const ENUM_CONV_LIFETIME: &str = "'enum_conv";
+
 use crate::parse_enum::{
     create_marker_enums, fetch_fields_from_enum, fetch_impl_generics,
     fetch_name_with_generic_params, get_marker,
@@ -27,8 +29,12 @@ fn impl_conversions(ast: &DeriveInput) -> TokenStream {
     let mut tokens: TokenStream = "".parse().unwrap();
 
     let name = &ast.ident.to_string();
-    let fullname = fetch_name_with_generic_params(ast);
-    let (impl_generics, where_clause) = fetch_impl_generics(ast);
+    let (fullname, lifetimes) = fetch_name_with_generic_params(ast);
+    let (
+        impl_generics,
+        impl_generics_ref,
+        where_clause)
+        = fetch_impl_generics(ast, ENUM_CONV_LIFETIME,  &lifetimes);
     let field_map = fetch_fields_from_enum(ast);
 
     tokens.extend::<TokenStream>(create_marker_enums(name, &field_map).parse().unwrap());
@@ -36,8 +42,8 @@ fn impl_conversions(ast: &DeriveInput) -> TokenStream {
         impls::impl_get_variant(
             name,
             &fullname,
-            &where_clause,
             &impl_generics,
+            &where_clause,
             &field_map,
             &tera,
         )
@@ -48,8 +54,9 @@ fn impl_conversions(ast: &DeriveInput) -> TokenStream {
         impls::impl_try_from(
             name,
             &fullname,
-            &where_clause,
             &impl_generics,
+            &impl_generics_ref,
+            &where_clause,
             &field_map,
             &tera,
         )
@@ -60,8 +67,9 @@ fn impl_conversions(ast: &DeriveInput) -> TokenStream {
         impls::impl_try_to(
             name,
             &fullname,
-            &where_clause,
             &impl_generics,
+            &impl_generics_ref,
+            &where_clause,
             &field_map,
             &tera,
         )

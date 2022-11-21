@@ -17,4 +17,8 @@ fmt:
 test:
 	cd enum-conversion-derive && \
 	$(cargo) test && \
-	cd ..
+	cd .. && \
+	$(cargo) test
+
+expand:
+	cargo +$(nightly) expand

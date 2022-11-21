@@ -46,29 +46,29 @@ impl{{ generics }} TryTo<{{ Type }}> for {{ fullname }}
 {
     type Error = {{ Error }};
 
-    fn try_to(self) -> std::result::Result<Self, Self::Error> {
-        value.get_variant(){{ Map_Err }}
+    fn try_to(self) -> std::result::Result<{{ Type }}, Self::Error> {
+        self.get_variant(){{ Map_Err }}
     }
 }
 
-impl{{ generics }} TryTo<&{{ Type }}> for &{{ fullname }}
+impl{{ generics_ref }} TryTo<&{{ Lifetime }} {{ Type }}> for &{{ Lifetime }} {{ fullname }}
 {{ Where }}
 {
     type Error = {{ Error }};
 
-    fn try_to(self) -> std::result::Result<Self, Self::Error> {
-        value.get_variant_ref(){{ Map_Err }}
+    fn try_to(self) -> std::result::Result<&{{ Lifetime }} {{ Type }}, Self::Error> {
+        self.get_variant_ref(){{ Map_Err }}
     }
 }
 
-impl{{ generics }} TryTo<&mut {{ Type }}> from &mut {{ fullname }}
+impl{{ generics_ref }} TryTo<&{{ Lifetime }} mut {{ Type }}> for &{{ Lifetime }} mut {{ fullname }}
 {{ Where }}
 {
 
     type Error = {{ Error }};
 
-    fn try_to(self) -> std::result::Result<Self, Self::Error> {
-        value.get_variant_mut(){{ Map_Err }}
+    fn try_to(self) -> std::result::Result<&{{ Lifetime }} mut {{ Type }}, Self::Error> {
+        self.get_variant_mut(){{ Map_Err }}
     }
 }
 "#;
@@ -80,28 +80,28 @@ impl{{ generics }} TryFrom<{{ fullname }}> for {{ Type }}
     type Error = {{ Error }};
 
     fn try_from(value: {{ fullname }}) -> std::result::Result<Self, Self::Error> {
-        value.try_to(){{ Map_Err }}
+        value.try_to::<{{ Type }}>(){{ Map_Err }}
     }
 }
 
-impl{{ generics }} TryFrom<&{{ fullname }}> for &{{ Type }}
+impl{{ generics_ref }} TryFrom<&{{ Lifetime }} {{ fullname }}> for &{{ Lifetime}} {{ Type }}
 {{ Where }}
 {
     type Error = {{ Error }};
 
-    fn try_from(value: &{{ fullname }}) -> std::result::Result<Self, Self::Error> {
-        value.try_to(){{ Map_Err }}
+    fn try_from(value: &{{ Lifetime }} {{ fullname }}) -> std::result::Result<Self, Self::Error> {
+        value.try_to::<&{{ Lifetime }} {{ Type }}>(){{ Map_Err }}
 
     }
 }
 
-impl{{ generics }} TryFrom<&mut {{ fullname }}> for &mut {{ Type }}
+impl{{ generics_ref }} TryFrom<&{{ Lifetime }} mut {{ fullname }}> for &{{ Lifetime }} mut {{ Type }}
 {{ Where }}
 {
     type Error = {{ Error }};
 
-    fn try_from(value: &mut {{ fullname }}) -> std::result::Result<Self, Self::Error> {
-        value.try_to(){{ Map_Err }}
+    fn try_from(value: &{{ Lifetime }} mut {{ fullname }}) -> std::result::Result<Self, Self::Error> {
+        value.try_to::<&{{ Lifetime }} mut {{ Type}}>(){{ Map_Err }}
     }
 }
 "#;

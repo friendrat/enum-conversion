@@ -4,8 +4,8 @@ use std::{error::Error, fmt};
 /// the enum and requested type that produced the error
 #[derive(Debug)]
 pub struct EnumConversionError {
-    name: String,
-    requested_type: String,
+    pub name: String,
+    pub requested_type: String,
 }
 
 impl EnumConversionError {
@@ -34,7 +34,7 @@ impl fmt::Display for EnumConversionError {
 /// to uniquely identify a type in the enum. This avoids
 /// relying on [`std::any::TypeId`] which is limited to types
 /// that are `'static`.
-trait GetVariant<T, Marker> {
+pub trait GetVariant<T, Marker> {
     fn get_variant(self) -> Result<T, EnumConversionError>;
     fn get_variant_ref(&self) -> Result<&T, EnumConversionError>;
     fn get_variant_mut(&mut self) -> Result<&mut T, EnumConversionError>;
@@ -48,5 +48,5 @@ trait GetVariant<T, Marker> {
 /// issue. It closely mimics the [`std::convert::TryInto`] trait.
 pub trait TryTo<T> {
     type Error;
-    fn try_to(self) -> T;
+    fn try_to(self) -> Result<T, Self::Error>;
 }
