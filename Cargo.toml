@@ -9,8 +9,6 @@ license = "GNU General Public Licence v3.0"
 categories = ["development-tools", "rust-patterns"]
 build = false
 
-[lib]
-proc-macro = true
 
 [workspace]
 members = [

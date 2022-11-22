@@ -66,7 +66,7 @@ pub fn fetch_impl_generics(ast: &DeriveInput, lifetime: &str, bounds: &[String])
     let mut generics_ref = generics.clone();
     generics_ref
         .params
-        .push(GenericParam::Lifetime(bound_lifetime(&lifetime, bounds)));
+        .push(GenericParam::Lifetime(bound_lifetime(lifetime, bounds)));
 
     let where_clause = generics
         .where_clause
@@ -82,17 +82,9 @@ pub fn fetch_impl_generics(ast: &DeriveInput, lifetime: &str, bounds: &[String])
 /// Given a lifetime and a list of other lifetimes, creates
 /// the bound that states the input lifetime cannot outlive
 /// the lifetimes in the list.
-///
-/// # Example:
-/// ```
-/// let lifetime = "a";
-/// let bounds = vec!["b".into(), "c".into()];
-/// let bound = bound_lifetime(lifetime, bounds);
-/// assert_eq!(bound.to_token_stream().to_string(), "'a : 'b + 'c")
-/// ```
 pub fn bound_lifetime(lifetime: &str, bounds: &[String]) -> syn::LifetimeDef {
     let mut lifetime_def = LifetimeDef::new(Lifetime::new(
-        &lifetime,
+        lifetime,
         Span::call_site(),
     ));
     lifetime_def.colon_token = if bounds.is_empty() {
@@ -236,7 +228,7 @@ mod test_parsers {
     fn test_global_try_from_config() {
         let ast: DeriveInput = syn::parse_str(
             r#"
-            #[EnumConv::TryFrom]
+            #[DeriveTryFrom]
             enum Enum {
                 F1(i64),
                 F2(bool),
@@ -276,7 +268,7 @@ mod test_parsers {
             r#"
             enum Enum {
                 F1(i64),
-                #[EnumConv::TryFrom]
+                #[DeriveTryFrom]
                 F2(bool),
             }
         "#,
@@ -303,13 +295,13 @@ mod test_parsers {
     fn test_try_from_overwrite() {
         let ast: DeriveInput = syn::parse_str(
             r#"
-            #[EnumConv::TryFrom(
+            #[DeriveTryFrom(
                 Error: Box<dyn Error + 'static>,
                 |e| e.to_string().into()
             )]
             enum Enum {
                 F1(i64),
-                #[EnumConv::TryFrom]
+                #[DeriveTryFrom]
                 F2(bool),
             }
         "#,
@@ -348,13 +340,13 @@ mod test_parsers {
     fn test_try_to_overwrite() {
         let ast: DeriveInput = syn::parse_str(
             r#"
-            #[EnumConv::TryTo(
+            #[TryTo(
                 Error: Box<dyn Error + 'static>,
                 |e| e.to_string().into()
             )]
             enum Enum {
                 F1(i64),
-                #[EnumConv::TryTo]
+                #[TryTo]
                 F2(bool),
             }
         "#,
@@ -500,7 +492,7 @@ mod test_parsers {
         let output = create_marker_enums(&ast.ident.to_string(), &fields);
         assert_eq!(
             output,
-            "#[allow(non_snake_case]\n mod enum___conversion___Enum{ pub(crate) enum F1{}}"
+            "#[allow(non_snake_case)]\n mod enum___conversion___Enum{ pub(crate) enum F1{}}"
         );
     }
 }

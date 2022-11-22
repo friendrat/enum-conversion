@@ -227,7 +227,7 @@ mod test_impls {
     fn test_try_from_on() {
         let ast: DeriveInput = syn::parse_str(
             r#"
-            #[EnumConv::TryFrom(
+            #[DeriveTryFrom(
                 Error: Box<dyn Error + 'static>,
                 |e| e.to_string().into()
             )]
@@ -254,7 +254,7 @@ mod test_impls {
             &field_map,
             &tera,
         );
-        let expected = "\nimpl< 'a , T > TryFrom<Enum<'a,T>> for Box < & 'a dyn Into < T > >\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_from(value: Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to::<Box < & 'a dyn Into < T > >>().map_err(| e | e . to_string () . into ())\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryFrom<&'enum_conv Enum<'a,T>> for &'enum_conv Box < & 'a dyn Into < T > >\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_from(value: &'enum_conv Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to::<&'enum_conv Box < & 'a dyn Into < T > >>().map_err(| e | e . to_string () . into ())\n\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryFrom<&'enum_conv mut Enum<'a,T>> for &'enum_conv mut Box < & 'a dyn Into < T > >\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_from(value: &'enum_conv mut Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to::<&'enum_conv mut Box < & 'a dyn Into < T > >>().map_err(| e | e . to_string () . into ())\n    }\n}\n";
+        let expected = "\nimpl< 'a , T > TryFrom<Enum<'a,T>> for Box < & 'a dyn Into < T > >\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_from(value: Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to().map_err(| e | e . to_string () . into ())\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryFrom<&'enum_conv Enum<'a,T>> for &'enum_conv Box < & 'a dyn Into < T > >\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_from(value: &'enum_conv Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to().map_err(| e | e . to_string () . into ())\n\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryFrom<&'enum_conv mut Enum<'a,T>> for &'enum_conv mut Box < & 'a dyn Into < T > >\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_from(value: &'enum_conv mut Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to().map_err(| e | e . to_string () . into ())\n    }\n}\n";
         assert_eq!(output, expected);
     }
 
@@ -267,7 +267,7 @@ mod test_impls {
                 T: Debug
             {
                 Field(Box<&'a dyn Into<T>>),
-                #[EnumConv::TryFrom]
+                #[DeriveTryFrom]
                 Other(i64)
             }
         "#,
@@ -287,7 +287,7 @@ mod test_impls {
             &field_map,
             &tera,
         );
-        let expected = "\nimpl< 'a , T > TryFrom<Enum<'a,T>> for i64\nwhere T : Debug,\n Enum<'a,T>: GetVariant<i64, enum___conversion___Enum::Other>\n{\n    type Error = EnumConversionError;\n\n    fn try_from(value: Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to::<i64>()\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryFrom<&'enum_conv Enum<'a,T>> for &'enum_conv i64\nwhere T : Debug,\n Enum<'a,T>: GetVariant<i64, enum___conversion___Enum::Other>\n{\n    type Error = EnumConversionError;\n\n    fn try_from(value: &'enum_conv Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to::<&'enum_conv i64>()\n\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryFrom<&'enum_conv mut Enum<'a,T>> for &'enum_conv mut i64\nwhere T : Debug,\n Enum<'a,T>: GetVariant<i64, enum___conversion___Enum::Other>\n{\n    type Error = EnumConversionError;\n\n    fn try_from(value: &'enum_conv mut Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to::<&'enum_conv mut i64>()\n    }\n}\n";
+        let expected = "\nimpl< 'a , T > TryFrom<Enum<'a,T>> for i64\nwhere T : Debug,\n Enum<'a,T>: GetVariant<i64, enum___conversion___Enum::Other>\n{\n    type Error = EnumConversionError;\n\n    fn try_from(value: Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to()\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryFrom<&'enum_conv Enum<'a,T>> for &'enum_conv i64\nwhere T : Debug,\n Enum<'a,T>: GetVariant<i64, enum___conversion___Enum::Other>\n{\n    type Error = EnumConversionError;\n\n    fn try_from(value: &'enum_conv Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to()\n\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryFrom<&'enum_conv mut Enum<'a,T>> for &'enum_conv mut i64\nwhere T : Debug,\n Enum<'a,T>: GetVariant<i64, enum___conversion___Enum::Other>\n{\n    type Error = EnumConversionError;\n\n    fn try_from(value: &'enum_conv mut Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to()\n    }\n}\n";
         assert_eq!(output, expected);
     }
 
@@ -340,7 +340,7 @@ mod test_impls {
             &field_map,
             &tera,
         );
-        let expected = "\nimpl< 'a , T > TryTo<Box < & 'a dyn Into < T > >> for Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = EnumConversionError;\n\n    fn try_to(self) -> std::result::Result<Box < & 'a dyn Into < T > >, Self::Error> {\n        self.get_variant()\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryTo<&'enum_conv Box < & 'a dyn Into < T > >> for &'enum_conv Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = EnumConversionError;\n\n    fn try_to(self) -> std::result::Result<&'enum_conv Box < & 'a dyn Into < T > >, Self::Error> {\n        self.get_variant_ref()\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryTo<&'enum_conv mut Box < & 'a dyn Into < T > >> from &'enum_conv mut Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n\n    type Error = EnumConversionError;\n\n    fn try_to(self) -> std::result::Result<&'enum_conv mut Box < & 'a dyn Into < T > >, Self::Error> {\n        self.get_variant_mut()\n    }\n}\n";
+        let expected = "\nimpl< 'a , T > TryTo<Box < & 'a dyn Into < T > >> for Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = EnumConversionError;\n\n    fn try_to(self) -> std::result::Result<Box < & 'a dyn Into < T > >, Self::Error> {\n        self.get_variant()\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryTo<&'enum_conv Box < & 'a dyn Into < T > >> for &'enum_conv Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = EnumConversionError;\n\n    fn try_to(self) -> std::result::Result<&'enum_conv Box < & 'a dyn Into < T > >, Self::Error> {\n        self.get_variant_ref()\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryTo<&'enum_conv mut Box < & 'a dyn Into < T > >> for &'enum_conv mut Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n\n    type Error = EnumConversionError;\n\n    fn try_to(self) -> std::result::Result<&'enum_conv mut Box < & 'a dyn Into < T > >, Self::Error> {\n        self.get_variant_mut()\n    }\n}\n";
         assert_eq!(output, expected);
     }
 
@@ -348,7 +348,7 @@ mod test_impls {
     fn test_try_to_custom() {
         let ast: DeriveInput = syn::parse_str(
             r#"
-          #[EnumConv::TryTo(
+          #[TryTo(
                 Error: Box<dyn Error + 'static>,
                 |e| e.to_string().into()
             )]
@@ -375,7 +375,7 @@ mod test_impls {
             &field_map,
             &tera,
         );
-        let expected = "\nimpl< 'a , T > TryTo<Box < & 'a dyn Into < T > >> for Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_to(self) -> std::result::Result<Box < & 'a dyn Into < T > >, Self::Error> {\n        self.get_variant().map_err(| e | e . to_string () . into ())\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryTo<&'enum_conv Box < & 'a dyn Into < T > >> for &'enum_conv Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_to(self) -> std::result::Result<&'enum_conv Box < & 'a dyn Into < T > >, Self::Error> {\n        self.get_variant_ref().map_err(| e | e . to_string () . into ())\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryTo<&'enum_conv mut Box < & 'a dyn Into < T > >> from &'enum_conv mut Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_to(self) -> std::result::Result<&'enum_conv mut Box < & 'a dyn Into < T > >, Self::Error> {\n        self.get_variant_mut().map_err(| e | e . to_string () . into ())\n    }\n}\n";
+        let expected = "\nimpl< 'a , T > TryTo<Box < & 'a dyn Into < T > >> for Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_to(self) -> std::result::Result<Box < & 'a dyn Into < T > >, Self::Error> {\n        self.get_variant().map_err(| e | e . to_string () . into ())\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryTo<&'enum_conv Box < & 'a dyn Into < T > >> for &'enum_conv Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_to(self) -> std::result::Result<&'enum_conv Box < & 'a dyn Into < T > >, Self::Error> {\n        self.get_variant_ref().map_err(| e | e . to_string () . into ())\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryTo<&'enum_conv mut Box < & 'a dyn Into < T > >> for &'enum_conv mut Enum<'a,T>\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_to(self) -> std::result::Result<&'enum_conv mut Box < & 'a dyn Into < T > >, Self::Error> {\n        self.get_variant_mut().map_err(| e | e . to_string () . into ())\n    }\n}\n";
         assert_eq!(output, expected);
     }
 }

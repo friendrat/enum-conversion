@@ -6,9 +6,8 @@ use syn::punctuated::Punctuated;
 use syn::Token;
 use syn::{Attribute, Expr};
 
-const ATTR_PREFIX: &str = "EnumConv";
 const ATTR_TRY_TO: &str = "TryTo";
-const ATTR_TRY_FROM: &str = "TryFrom";
+const ATTR_TRY_FROM: &str = "DeriveTryFrom";
 
 /// The information for each variant
 /// in the enum.
@@ -94,22 +93,19 @@ impl Default for ErrorConfig {
 /// variants may overwrite this default.
 pub(crate) fn parse_attrs(attrs: &[Attribute], mut global: VariantAttrs) -> VariantAttrs {
     for attr in attrs.iter() {
-        if let Ok(prefix) = <[String; 2]>::try_from(
-            attr.path
+        if let Some(prefix) = attr.path
                 .segments
-                .iter()
+                .first()
                 .map(|seg| seg.ident.to_string())
-                .take(2)
-                .collect::<Vec<_>>(),
-        ) {
-            if prefix[0] == ATTR_PREFIX && prefix[1] == ATTR_TRY_FROM {
+        {
+            if prefix ==  ATTR_TRY_FROM {
                 if !attr.tokens.is_empty() {
                     global.try_from = Some(parse_custom_error_config(attr));
                 } else {
                     global.try_from = Some(ErrorConfig::Default);
                 }
             }
-            if prefix[0] == ATTR_PREFIX && prefix[1] == ATTR_TRY_TO {
+            if prefix  == ATTR_TRY_TO {
                 if !attr.tokens.is_empty() {
                     global.try_to = parse_custom_error_config(attr);
                 } else {
@@ -222,11 +218,11 @@ mod test_attrs {
     fn parse_global_tryto() {
         let ast: DeriveInput = parse_str(
             r#"
-            #[EnumConv::TryTo(
+            #[TryTo(
                 Error: std::io::Error,
                 |e| Error::new(ErrorKind::Other, e.to_string())
               )]
-            #[EnumConv::TryFrom]
+            #[DeriveTryFrom]
             enum Enum {
                 F1(i64),
                 F2(bool),
@@ -249,11 +245,11 @@ mod test_attrs {
     fn test_overwite_config() {
         let ast: DeriveInput = parse_str(
             r#"
-            #[EnumConv::TryTo(
+            #[TryTo(
                 Error: std::io::Error,
                 |e| Error::new(ErrorKind::Other, e.to_string())
               )]
-            #[EnumConv::TryFrom]
+            #[DeriveTryFrom]
             enum Enum {
                 F1(i64),
                 F2(bool),
@@ -289,10 +285,10 @@ mod test_attrs {
     fn test_wrong_arg_number() {
         let ast: DeriveInput = parse_str(
             r#"
-            #[EnumConv::TryTo(
+            #[TryTo(
                 Error: std::io::Error
               )]
-            #[EnumConv::TryFrom]
+            #[DeriveTryFrom]
             enum Enum {
                 F1(i64),
                 F2(bool),
@@ -311,11 +307,11 @@ mod test_attrs {
     fn test_non_closure() {
         let ast: DeriveInput = parse_str(
             r#"
-            #[EnumConv::TryTo(
+            #[TryTo(
                 Error: std::io::Error,
                 Vec::new
               )]
-            #[EnumConv::TryFrom]
+            #[DeriveTryFrom]
             enum Enum {
                 F1(i64),
                 F2(bool),
@@ -334,11 +330,11 @@ mod test_attrs {
     fn test_bad_key() {
         let ast: DeriveInput = parse_str(
             r#"
-            #[EnumConv::TryTo(
+            #[TryTo(
                 err: std::io::Error,
                 Vec::new
               )]
-            #[EnumConv::TryFrom]
+            #[DeriveTryFrom]
             enum Enum {
                 F1(i64),
                 F2(bool),
@@ -355,11 +351,11 @@ mod test_attrs {
     fn test_non_error_type() {
         let ast: DeriveInput = parse_str(
             r#"
-            #[EnumConv::TryTo(
+            #[TryTo(
                 Error: || false,
                 Vec::new
               )]
-            #[EnumConv::TryFrom]
+            #[DeriveTryFrom]
             enum Enum {
                 F1(i64),
                 F2(bool),

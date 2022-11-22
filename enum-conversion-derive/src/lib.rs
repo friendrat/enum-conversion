@@ -17,11 +17,12 @@ use crate::parse_enum::{
     fetch_name_with_generic_params, get_marker,
 };
 
-#[proc_macro_derive(EnumConversions)]
+#[proc_macro_derive(EnumConversions, attributes(DeriveTryFrom, TryTo))]
 pub fn enum_conversions_derive(input: TokenStream) -> TokenStream {
     let enum_ast = syn::parse(input).unwrap();
     impl_conversions(&enum_ast)
 }
+
 
 /// Implements ContainsVariant, GetVariant, SetVariant, and CreateVariantFrom traits
 fn impl_conversions(ast: &DeriveInput) -> TokenStream {
