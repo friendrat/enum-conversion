@@ -80,7 +80,7 @@ impl{{ generics }} TryFrom<{{ fullname }}> for {{ Type }}
     type Error = {{ Error }};
 
     fn try_from(value: {{ fullname }}) -> std::result::Result<Self, Self::Error> {
-        value.try_to(){{ Map_Err }}
+        value.try_to()
     }
 }
 
@@ -90,7 +90,7 @@ impl{{ generics_ref }} TryFrom<&{{ Lifetime }} {{ fullname }}> for &{{ Lifetime}
     type Error = {{ Error }};
 
     fn try_from(value: &{{ Lifetime }} {{ fullname }}) -> std::result::Result<Self, Self::Error> {
-        value.try_to(){{ Map_Err }}
+        value.try_to()
 
     }
 }
@@ -101,7 +101,7 @@ impl{{ generics_ref }} TryFrom<&{{ Lifetime }} mut {{ fullname }}> for &{{ Lifet
     type Error = {{ Error }};
 
     fn try_from(value: &{{ Lifetime }} mut {{ fullname }}) -> std::result::Result<Self, Self::Error> {
-        value.try_to(){{ Map_Err }}
+        value.try_to()
     }
 }
 "#;

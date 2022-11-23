@@ -1,0 +1,43 @@
+error[E0119]: conflicting implementations of trait `enum_conversion_traits::TryTo<Local<_>>` for type `Enum<_, _>`
+  --> tests/uncompilable_examples/generics_collision.rs:22:1
+   |
+22 | #[EnumConversions]
+   | ^^^^^^^^^^^^^^^^^^
+   | |
+   | first implementation here
+   | conflicting implementation for `Enum<_, _>`
+   |
+   = note: this error originates in the attribute macro `EnumConversions` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0119]: conflicting implementations of trait `enum_conversion_traits::TryTo<&Local<_>>` for type `&Enum<_, _>`
+  --> tests/uncompilable_examples/generics_collision.rs:22:1
+   |
+22 | #[EnumConversions]
+   | ^^^^^^^^^^^^^^^^^^
+   | |
+   | first implementation here
+   | conflicting implementation for `&Enum<_, _>`
+   |
+   = note: this error originates in the attribute macro `EnumConversions` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0119]: conflicting implementations of trait `enum_conversion_traits::TryTo<&mut Local<_>>` for type `&mut Enum<_, _>`
+  --> tests/uncompilable_examples/generics_collision.rs:22:1
+   |
+22 | #[EnumConversions]
+   | ^^^^^^^^^^^^^^^^^^
+   | |
+   | first implementation here
+   | conflicting implementation for `&mut Enum<_, _>`
+   |
+   = note: this error originates in the attribute macro `EnumConversions` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0119]: conflicting implementations of trait `std::convert::From<Local<_>>` for type `Enum<_, _>`
+  --> tests/uncompilable_examples/generics_collision.rs:22:1
+   |
+22 | #[EnumConversions]
+   | ^^^^^^^^^^^^^^^^^^
+   | |
+   | first implementation here
+   | conflicting implementation for `Enum<_, _>`
+   |
+   = note: this error originates in the attribute macro `EnumConversions` (in Nightly builds, run with -Z macro-backtrace for more info)

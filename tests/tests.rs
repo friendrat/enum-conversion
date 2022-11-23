@@ -1,13 +1,13 @@
-
-
+/// Test that the derived traits behave correctly.
 #[cfg(test)]
-mod test_advanced_derive_basic {
-    use enum_conversion::prelude::advanced::*;
+mod test_derive_basic {
+    use enum_conversion::prelude::*;
     use std::convert::TryFrom;
     use std::marker::PhantomData;
 
     /// Simplest kind of enum
-    #[derive(Debug, PartialEq, EnumConversions)]
+    #[derive(Debug, PartialEq)]
+    #[EnumConversions]
     #[DeriveTryFrom]
     enum Test {
         F1(i32),
@@ -16,7 +16,7 @@ mod test_advanced_derive_basic {
 
     /// Enum with multiple lifetimes and multiple
     /// generic parameters.
-    #[derive(EnumConversions)]
+    #[EnumConversions]
     enum Test2<'a, 'b, U, T> {
         F1(&'a U),
         #[DeriveTryFrom]
@@ -64,35 +64,23 @@ mod test_advanced_derive_basic {
     }
 }
 
+/// Test that errors are configured correctly.
 #[cfg(test)]
-mod test_advanced_derive_errors {
-    use std::error::Error;
-    use enum_conversion::prelude::advanced::*;
+mod test_derive_errors {
+    use enum_conversion::prelude::*;
     use std::convert::TryFrom;
+    use std::error::Error;
 
     /// Customize the errors returned in the
     /// TryFrom implementations.
-    #[derive(Debug, PartialEq, EnumConversions)]
-    #[DeriveTryFrom(
+    #[derive(Debug, PartialEq)]
+    #[EnumConversions(
         Error: Box<dyn Error + 'static>,
-        |e: EnumConversionError | e.to_string().into(),
-    )]
-    enum Test {
-        F1(i32),
-        /// Set the error back to default.
-        #[DeriveTryFrom]
-        F2(bool),
-    }
-
-    #[derive(Debug, PartialEq, EnumConversions)]
-    #[TryTo(
-        Error: Box<dyn Error + 'static>,
-        |e: EnumConversionError | e.to_string().into(),
+        |e| e.to_string().into(),
     )]
     #[DeriveTryFrom]
-    enum Test2 {
+    enum Test {
         F1(i32),
-        /// Set the error back to default.
         F2(bool),
     }
 
@@ -106,24 +94,26 @@ mod test_advanced_derive_errors {
         assert_eq!(error, expected)
     }
 
-    /// Test that the attribute on the F2 variant
-    /// restores the error to the default.
-    #[test]
-    fn test_attribute_default_error() {
-        let test: Test = 10_i32.into();
-        let int: Result<bool, EnumConversionError> = test.try_into();
-        let EnumConversionError{name, requested_type} = int.unwrap_err();
-        assert_eq!(name, "Test");
-        assert_eq!(requested_type, "bool");
-    }
-
     #[test]
     fn test_custom_try_to() {
-        let test: Test2 = 10_i32.into();
-        let int: Result<bool, EnumConversionError> = test.try_into();
-        let EnumConversionError{name, requested_type} = int.unwrap_err();
-        assert_eq!(name, "Test");
-        assert_eq!(requested_type, "bool");
+        let test: Test = 10_i32.into();
+        let int: Result<bool, Box<dyn Error + 'static>> = test.try_into();
+        let error = int.unwrap_err().to_string();
+        let expected = "EnumConversionError :: Active field of enum <Test> is not of type <bool>";
+        assert_eq!(error, expected);
     }
+}
 
+
+
+/// Tests that the derive macro correctly panics (thereby failing compilation) for the correct
+/// cases.
+#[cfg(test)]
+mod test_compile_failures {
+    #[test]
+    fn test_uncompilable_examples() {
+        let t = trybuild::TestCases::new();
+        t.compile_fail("tests/uncompilable_examples/generics_collision.rs");
+        t.compile_fail("tests/uncompilable_examples/foreign_types.rs");
+    }
 }

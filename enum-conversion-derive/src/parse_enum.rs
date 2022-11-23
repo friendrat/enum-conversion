@@ -6,7 +6,7 @@ use syn::__private::Span;
 use syn::{Data, GenericParam, Lifetime, LifetimeDef, Token};
 
 use super::*;
-use crate::parse_attributes::{parse_attrs, VariantAttrs, VariantInfo};
+use crate::parse_attributes::{parse_attrs, VariantInfo};
 
 /// This functions determines the name of the enum with generic
 /// params attached.
@@ -43,25 +43,48 @@ pub fn fetch_name_with_generic_params(ast: &DeriveInput) -> (String, Vec<String>
     }
 }
 
+/// The generic arguments and lifetimes that must
+/// be added to trait implementations.
+pub struct ImplGenerics {
+    /// The generic params inherited from the decorated
+    /// type.
+    pub impl_generics: String,
+    /// For returning references, an extra lifetime with
+    /// appropriate bounds must be used in addition to
+    /// the generics from the type.
+    pub impl_generics_ref: String,
+    /// The where clause with trait bounds from the decorated
+    /// type.
+    pub where_clause: String,
+}
+
 /// This fetches the generics for impl blocks on the traits
 /// and the where clause.
 ///
 /// # Example:
 /// ```
 /// use std::fmt::Debug;
-/// pub enum Enum<T: Debug, U>
+/// pub enum Enum<'a, T: Debug, U>
 ///where
 ///     U: Into<T>
 /// {
-///     F1(T),
+///     F1(&'a T),
 ///     F2(U)
 /// }
 /// ```
-/// returns `("<T: Debug, U>", "where U: Into<T>")`.
+/// returns
+/// `
+/// ImplGenerics {
+///     impl_generics: "<T: Debug, U>",
+///     impl_generics_ref: "<'a, 'enum_conv: 'a, T: Debug, U>",
+///     where_clause: "where U: Into<T>",
+/// }
+/// `
+///
 ///
 /// For traits the return references, the lifetime of the reference must be bound
 /// by lifetimes in the definition of the enum.
-pub fn fetch_impl_generics(ast: &DeriveInput, lifetime: &str, bounds: &[String]) -> (String, String, String) {
+pub fn fetch_impl_generics(ast: &DeriveInput, lifetime: &str, bounds: &[String]) -> ImplGenerics {
     let mut generics = ast.generics.clone();
     let mut generics_ref = generics.clone();
     generics_ref
@@ -72,21 +95,18 @@ pub fn fetch_impl_generics(ast: &DeriveInput, lifetime: &str, bounds: &[String])
         .where_clause
         .take()
         .map(|w| w.to_token_stream().to_string());
-    (
-        generics.to_token_stream().to_string(),
-        generics_ref.to_token_stream().to_string(),
-        where_clause.unwrap_or_default(),
-    )
+    ImplGenerics {
+        impl_generics: generics.to_token_stream().to_string(),
+        impl_generics_ref: generics_ref.to_token_stream().to_string(),
+        where_clause: where_clause.unwrap_or_default(),
+    }
 }
 
 /// Given a lifetime and a list of other lifetimes, creates
 /// the bound that states the input lifetime cannot outlive
 /// the lifetimes in the list.
 pub fn bound_lifetime(lifetime: &str, bounds: &[String]) -> syn::LifetimeDef {
-    let mut lifetime_def = LifetimeDef::new(Lifetime::new(
-        lifetime,
-        Span::call_site(),
-    ));
+    let mut lifetime_def = LifetimeDef::new(Lifetime::new(lifetime, Span::call_site()));
     lifetime_def.colon_token = if bounds.is_empty() {
         Some(Token![:](Span::call_site()))
     } else {
@@ -109,13 +129,13 @@ pub fn bound_lifetime(lifetime: &str, bounds: &[String]) -> syn::LifetimeDef {
 ///  * Enums with unit variants.
 ///
 /// Will panic if the input type is not an enum.
-pub(crate) fn fetch_fields_from_enum(ast: &DeriveInput) -> HashMap<String, VariantInfo> {
-    if let Data::Enum(data) = &ast.data {
+pub(crate) fn fetch_fields_from_enum(ast: &mut DeriveInput) -> HashMap<String, VariantInfo> {
+    let derive_globally = parse_attrs(&mut ast.attrs);
+    if let Data::Enum(data) = &mut ast.data {
         let mut num_fields: usize = 0;
-        let global = parse_attrs(&ast.attrs, VariantAttrs::default());
         let mut types = data
             .variants
-            .iter()
+            .iter_mut()
             .map(|var| match &var.fields {
                 syn::Fields::Unnamed(field_) => {
                     if field_.unnamed.len() != 1 {
@@ -124,7 +144,6 @@ pub(crate) fn fetch_fields_from_enum(ast: &DeriveInput) -> HashMap<String, Varia
                              not contain multiple fields."
                         );
                     }
-                    let var_attrs = parse_attrs(&var.attrs, global.clone());
                     let var_ty = field_
                         .unnamed
                         .iter()
@@ -136,7 +155,7 @@ pub(crate) fn fetch_fields_from_enum(ast: &DeriveInput) -> HashMap<String, Varia
                     let var_name = var.ident.to_token_stream().to_string();
                     let var_info = VariantInfo {
                         ty: var_ty,
-                        attrs: var_attrs,
+                        try_from: parse_attrs(&mut var.attrs) || derive_globally,
                     };
                     num_fields += 1;
                     (var_info, var_name)
@@ -165,7 +184,10 @@ pub(crate) fn fetch_fields_from_enum(ast: &DeriveInput) -> HashMap<String, Varia
 /// Used to identify types in the enum and disambiguate
 /// generic parameters.
 pub(crate) fn create_marker_enums(name: &str, types: &HashMap<String, VariantInfo>) -> String {
-    let mut piece = format!("#[allow(non_snake_case)]\n mod enum___conversion___{}", name);
+    let mut piece = format!(
+        "#[allow(non_snake_case)]\n mod enum___conversion___{}",
+        name
+    );
     piece.push_str("{ ");
     for field in types.keys() {
         _ = write!(piece, "pub(crate) enum {}{{}}", field);
@@ -182,8 +204,8 @@ pub fn get_marker(name: &str, field: &str) -> String {
 
 #[cfg(test)]
 mod test_parsers {
+
     use super::*;
-    use crate::parse_attributes::ErrorConfig;
 
     const ENUM: &str = r#"
             enum Enum<'a, 'b, T, U: Debug>
@@ -206,8 +228,8 @@ mod test_parsers {
     /// We also check that attribute macros are supported.
     #[test]
     fn test_parse_fields_and_types() {
-        let ast: DeriveInput = syn::parse_str(ENUM).expect("Test failed.");
-        let fields = fetch_fields_from_enum(&ast);
+        let mut ast: DeriveInput = syn::parse_str(ENUM).expect("Test failed.");
+        let fields = fetch_fields_from_enum(&mut ast);
         let expected: HashMap<String, VariantInfo> = HashMap::from([
             ("Array".to_string(), "[u8 ; 20]".into()),
             ("BareFn".to_string(), "fn (& 'a usize) -> bool".into()),
@@ -226,7 +248,7 @@ mod test_parsers {
 
     #[test]
     fn test_global_try_from_config() {
-        let ast: DeriveInput = syn::parse_str(
+        let mut ast: DeriveInput = syn::parse_str(
             r#"
             #[DeriveTryFrom]
             enum Enum {
@@ -236,26 +258,20 @@ mod test_parsers {
         "#,
         )
         .expect("Test failed");
-        let fields = fetch_fields_from_enum(&ast);
+        let fields = fetch_fields_from_enum(&mut ast);
         let expected: HashMap<String, VariantInfo> = HashMap::from([
             (
                 "F1".to_string(),
                 VariantInfo {
                     ty: "i64".to_string(),
-                    attrs: VariantAttrs {
-                        try_from: Some(ErrorConfig::Default),
-                        try_to: ErrorConfig::Default,
-                    },
+                    try_from: true,
                 },
             ),
             (
                 "F2".to_string(),
                 VariantInfo {
                     ty: "bool".to_string(),
-                    attrs: VariantAttrs {
-                        try_from: Some(ErrorConfig::Default),
-                        try_to: ErrorConfig::Default,
-                    },
+                    try_from: true,
                 },
             ),
         ]);
@@ -264,7 +280,7 @@ mod test_parsers {
 
     #[test]
     fn test_try_from_local_config() {
-        let ast: DeriveInput = syn::parse_str(
+        let mut ast: DeriveInput = syn::parse_str(
             r#"
             enum Enum {
                 F1(i64),
@@ -274,107 +290,14 @@ mod test_parsers {
         "#,
         )
         .expect("Test failed");
-        let fields = fetch_fields_from_enum(&ast);
+        let fields = fetch_fields_from_enum(&mut ast);
         let expected: HashMap<String, VariantInfo> = HashMap::from([
             ("F1".to_string(), "i64".into()),
             (
                 "F2".to_string(),
                 VariantInfo {
                     ty: "bool".to_string(),
-                    attrs: VariantAttrs {
-                        try_from: Some(ErrorConfig::Default),
-                        try_to: ErrorConfig::Default,
-                    },
-                },
-            ),
-        ]);
-        assert_eq!(fields, expected);
-    }
-
-    #[test]
-    fn test_try_from_overwrite() {
-        let ast: DeriveInput = syn::parse_str(
-            r#"
-            #[DeriveTryFrom(
-                Error: Box<dyn Error + 'static>,
-                |e| e.to_string().into()
-            )]
-            enum Enum {
-                F1(i64),
-                #[DeriveTryFrom]
-                F2(bool),
-            }
-        "#,
-        )
-        .expect("Test failed");
-        let fields = fetch_fields_from_enum(&ast);
-        let expected: HashMap<String, VariantInfo> = HashMap::from([
-            (
-                "F1".to_string(),
-                VariantInfo {
-                    ty: "i64".to_string(),
-                    attrs: VariantAttrs {
-                        try_from: Some(ErrorConfig::Custom {
-                            error_ty: "Box < dyn Error + 'static >".to_string(),
-                            map_err: "| e | e . to_string () . into ()".to_string(),
-                        }),
-                        try_to: ErrorConfig::Default,
-                    },
-                },
-            ),
-            (
-                "F2".to_string(),
-                VariantInfo {
-                    ty: "bool".to_string(),
-                    attrs: VariantAttrs {
-                        try_from: Some(ErrorConfig::Default),
-                        try_to: ErrorConfig::Default,
-                    },
-                },
-            ),
-        ]);
-        assert_eq!(fields, expected);
-    }
-
-    #[test]
-    fn test_try_to_overwrite() {
-        let ast: DeriveInput = syn::parse_str(
-            r#"
-            #[TryTo(
-                Error: Box<dyn Error + 'static>,
-                |e| e.to_string().into()
-            )]
-            enum Enum {
-                F1(i64),
-                #[TryTo]
-                F2(bool),
-            }
-        "#,
-        )
-        .expect("Test failed");
-        let fields = fetch_fields_from_enum(&ast);
-        let expected: HashMap<String, VariantInfo> = HashMap::from([
-            (
-                "F1".to_string(),
-                VariantInfo {
-                    ty: "i64".to_string(),
-                    attrs: VariantAttrs {
-                        try_from: None,
-                        try_to: ErrorConfig::Custom {
-                            error_ty: "Box < dyn Error + 'static >".to_string(),
-                            map_err: "| e | e . to_string () . into ()".to_string(),
-                        },
-                    },
-                },
-            ),
-            (
-                "F2".to_string(),
-                VariantInfo {
-                    ty: "bool".to_string(),
-                    attrs: VariantAttrs {
-                        try_from: None,
-                        try_to: ErrorConfig::Default,
-                    },
+                    try_from: true,
                 },
             ),
         ]);
@@ -385,9 +308,16 @@ mod test_parsers {
     fn test_generics_and_bounds() {
         let ast: DeriveInput = syn::parse_str(ENUM).expect("Test failed.");
         let (_, lifetimes) = fetch_name_with_generic_params(&ast);
-        let (generics, generics_ref, where_clause) = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifetimes);
-        assert_eq!(generics, "< 'a , 'b , T , U : Debug >");
-        assert_eq!(generics_ref, "< 'a , 'b , 'enum_conv : 'a + 'b , T , U : Debug , >");
+        let ImplGenerics {
+            impl_generics,
+            impl_generics_ref,
+            where_clause,
+        } = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifetimes);
+        assert_eq!(impl_generics, "< 'a , 'b , T , U : Debug >");
+        assert_eq!(
+            impl_generics_ref,
+            "< 'a , 'b , 'enum_conv : 'a + 'b , T , U : Debug , >"
+        );
         assert_eq!(where_clause, "where T : Into < U > , U : 'a");
     }
 
@@ -402,14 +332,14 @@ mod test_parsers {
     #[test]
     #[should_panic(expected = "Can only derive for enums.")]
     fn test_panic_on_struct() {
-        let ast = syn::parse_str("pub struct Struct;").expect("Test failed");
-        _ = fetch_fields_from_enum(&ast);
+        let mut ast = syn::parse_str("pub struct Struct;").expect("Test failed");
+        _ = fetch_fields_from_enum(&mut ast);
     }
 
     #[test]
     #[should_panic(expected = "Can only derive for enums whose types do not have named fields.")]
     fn test_panic_on_field_with_named_types() {
-        let ast = syn::parse_str(
+        let mut ast = syn::parse_str(
             r#"
             enum Enum {
                 F{a: i64},
@@ -417,7 +347,7 @@ mod test_parsers {
         "#,
         )
         .expect("Test failed");
-        _ = fetch_fields_from_enum(&ast);
+        _ = fetch_fields_from_enum(&mut ast);
     }
 
     #[test]
@@ -425,7 +355,7 @@ mod test_parsers {
         expected = "Cannot derive for enums with more than one field with the same type."
     )]
     fn test_multiple_fields_same_type() {
-        let ast = syn::parse_str(
+        let mut ast = syn::parse_str(
             r#"
         enum Enum {
             F1(u64),
@@ -434,7 +364,7 @@ mod test_parsers {
         "#,
         )
         .expect("Test failed");
-        _ = fetch_fields_from_enum(&ast);
+        _ = fetch_fields_from_enum(&mut ast);
     }
 
     #[test]
@@ -442,7 +372,7 @@ mod test_parsers {
         expected = "Can only derive for enums whose types do not contain multiple fields."
     )]
     fn test_multiple_types_in_field() {
-        let ast = syn::parse_str(
+        let mut ast = syn::parse_str(
             r#"
             enum Enum {
                 Field(i64, bool),
@@ -450,7 +380,7 @@ mod test_parsers {
         "#,
         )
         .expect("Test failed");
-        _ = fetch_fields_from_enum(&ast);
+        _ = fetch_fields_from_enum(&mut ast);
     }
 
     #[test]
@@ -458,7 +388,7 @@ mod test_parsers {
         expected = "Can only derive for enums who don't contain unit types as variants."
     )]
     fn test_unit_type() {
-        let ast = syn::parse_str(
+        let mut ast = syn::parse_str(
             r#"
             enum Enum {
                 Some(bool),
@@ -467,20 +397,20 @@ mod test_parsers {
         "#,
         )
         .expect("Test failed");
-        _ = fetch_fields_from_enum(&ast);
+        _ = fetch_fields_from_enum(&mut ast);
     }
 
     /// If an enum has no fields, this derive macro will be a no-op
     #[test]
     fn test_harmless() {
-        let ast = syn::parse_str(r#"enum Enum{ }"#).expect("Test failed");
-        let fields = fetch_fields_from_enum(&ast);
+        let mut ast = syn::parse_str(r#"enum Enum{ }"#).expect("Test failed");
+        let fields = fetch_fields_from_enum(&mut ast);
         assert!(fields.is_empty())
     }
 
     #[test]
     fn test_create_marker_structs() {
-        let ast = syn::parse_str(
+        let mut ast = syn::parse_str(
             r#"
             enum Enum {
                 F1(u64)
@@ -488,7 +418,7 @@ mod test_parsers {
         "#,
         )
         .expect("Test failed.");
-        let fields = fetch_fields_from_enum(&ast);
+        let fields = fetch_fields_from_enum(&mut ast);
         let output = create_marker_enums(&ast.ident.to_string(), &fields);
         assert_eq!(
             output,

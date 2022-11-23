@@ -4,9 +4,9 @@ use quote::ToTokens;
 use syn::parse::Parser;
 use syn::punctuated::Punctuated;
 use syn::Token;
+use syn::__private::TokenStream2;
 use syn::{Attribute, Expr};
 
-const ATTR_TRY_TO: &str = "TryTo";
 const ATTR_TRY_FROM: &str = "DeriveTryFrom";
 
 /// The information for each variant
@@ -15,41 +15,22 @@ const ATTR_TRY_FROM: &str = "DeriveTryFrom";
 pub(crate) struct VariantInfo {
     /// The type of the variant.
     pub ty: String,
-    /// The attribute macros on the variant.
-    pub attrs: VariantAttrs,
+    /// Indicates if a `TryFrom` trait should be derived
+    /// for this variant.
+    pub try_from: bool,
 }
 
 impl From<&str> for VariantInfo {
     fn from(ty: &str) -> Self {
         VariantInfo {
             ty: ty.to_string(),
-            attrs: Default::default(),
+            try_from: false,
         }
     }
 }
 
-/// Represents that attributes on variants
-/// that we process.
-///
-/// Each field can provide an optional map_err
-/// closure to be used in the `TryTo` and `TryFrom`
-/// trait implementations.
-#[derive(Hash, PartialEq, Debug, Clone, Eq)]
-pub(crate) struct VariantAttrs {
-    pub try_from: Option<ErrorConfig>,
-    pub try_to: ErrorConfig,
-}
-
-impl Default for VariantAttrs {
-    fn default() -> Self {
-        VariantAttrs {
-            try_from: None,
-            try_to: ErrorConfig::Default,
-        }
-    }
-}
-
-/// Attributes can configure errors for the
+/// The input to the `EnumConversion` macro
+/// can configure errors for the
 /// `TryTo`/ `TryFrom` traits. In that case,
 /// custom error types and a closure for converting
 /// to that error type must be given.
@@ -88,53 +69,48 @@ impl Default for ErrorConfig {
 
 /// Parse attribute macros on the enum and variants.
 ///
-/// The global args are defined on the enum struct (or is replaced
-/// with a default if not attribute macro is used). Individual
-/// variants may overwrite this default.
-pub(crate) fn parse_attrs(attrs: &[Attribute], mut global: VariantAttrs) -> VariantAttrs {
-    for attr in attrs.iter() {
-        if let Some(prefix) = attr.path
-                .segments
-                .first()
-                .map(|seg| seg.ident.to_string())
-        {
-            if prefix ==  ATTR_TRY_FROM {
-                if !attr.tokens.is_empty() {
-                    global.try_from = Some(parse_custom_error_config(attr));
+/// Once the attribute macros are processed, they
+/// are removed from the AST.
+///
+/// Returns `true` iff the attribute is `[DeriveTryFrom]`.
+pub(crate) fn parse_attrs(attrs: &mut Vec<Attribute>) -> bool {
+    let mut derive_try_from = false;
+    *attrs = attrs
+        .clone()
+        .into_iter()
+        .filter(|attr| {
+            if let Some(prefix) = attr.path.segments.first().map(|seg| seg.ident.to_string()) {
+                if prefix == ATTR_TRY_FROM {
+                    derive_try_from = true;
+                    false
                 } else {
-                    global.try_from = Some(ErrorConfig::Default);
+                    true
                 }
+            } else {
+                true
             }
-            if prefix  == ATTR_TRY_TO {
-                if !attr.tokens.is_empty() {
-                    global.try_to = parse_custom_error_config(attr);
-                } else {
-                    global.try_to = ErrorConfig::Default;
-                }
-            }
-        }
-    }
-    global
+        })
+        .collect();
+    derive_try_from
 }
 
-/// Split the token stream inside an attribute macro into
-/// two separate args.
-fn split_args(tokens: proc_macro2::TokenStream) -> [Expr; 2] {
+/// Process the arguments passed into the attribute.
+/// Panics if they are not of the right format or
+/// the wrong number of arguments were passed in.
+fn split_args(args: TokenStream2) -> [Expr; 2] {
     let err_str = format!(
         "EnumConversion attribute macros expect either no arguments or exactly two \
          of the form 'Error: Type' and a closure. Found '{}'",
-        tokens,
+        args,
     );
-    // strip the outer delimiters
-    let args = match tokens.into_iter().next().unwrap() {
-        proc_macro2::TokenTree::Group(group) => group.stream(),
-        _ => panic!("{}", &err_str),
-    };
     // split the args by commas
-    let parser = Punctuated::<Expr, Token![,]>::parse_terminated;
-    let parsed: Punctuated<Expr, Token![,]> = parser.parse2(args).expect(&err_str);
+    let parser = Punctuated::<syn::Expr, Token![,]>::parse_terminated;
+    let args = match parser.parse2(args) {
+        Ok(args) => args,
+        Err(_) => panic!("{}", &err_str),
+    };
     // check that we got exactly two args
-    if let Ok(res) = <[Expr; 2]>::try_from(parsed.iter().take(2).cloned().collect::<Vec<Expr>>()) {
+    if let Ok(res) = <[Expr; 2]>::try_from(args.iter().take(2).cloned().collect::<Vec<Expr>>()) {
         res
     } else {
         panic!("{}", &err_str)
@@ -143,8 +119,12 @@ fn split_args(tokens: proc_macro2::TokenStream) -> [Expr; 2] {
 
 /// If an attribute macro is labelled as specifying a custom
 /// ErrorConfig and it has arguments, this function parses them.
-fn parse_custom_error_config(attr: &Attribute) -> ErrorConfig {
-    let [arg1, arg2] = split_args(attr.tokens.clone());
+pub(crate) fn parse_custom_error_config(args: TokenStream2) -> ErrorConfig {
+    if args.is_empty() {
+        return ErrorConfig::Default;
+    }
+    let arg_string = args.to_string();
+    let [arg1, arg2] = split_args(args);
     let parsed_1 = parse_attr_args(arg1);
     let parsed_2 = parse_attr_args(arg2);
     match (parsed_1, parsed_2) {
@@ -159,12 +139,12 @@ fn parse_custom_error_config(attr: &Attribute) -> ErrorConfig {
         _ => panic!(
             "EnumConversion attribute macros expect either no arguments or exactly two \
             of the form 'Error: Type' and a closure. Found '{}'",
-            attr.tokens,
+            arg_string,
         ),
     }
 }
 
-/// Parse the attribute macros of variants and /or enums as
+/// Parse the attribute macros of variants and / or enums as
 /// a whole.
 fn parse_attr_args(arg: Expr) -> ErrorConfigParam {
     match arg {
@@ -188,116 +168,100 @@ fn parse_attr_args(arg: Expr) -> ErrorConfigParam {
 
 #[cfg(test)]
 mod test_attrs {
-    use super::*;
+    use quote::quote;
     use syn::{parse_str, DeriveInput};
+
+    use super::*;
 
     /// Test that if no attribute macros are present,
     /// the default error config is generated.
+    /// Furthermore, macros unrelated to this crate
+    /// are not stripped.
     #[test]
-    fn parse_global_default() {
-        let ast: DeriveInput = parse_str(
+    fn test_no_op() {
+        let mut ast: DeriveInput = parse_str(
             r#"
+            #[derive(Debug)]
             enum Enum {
+                #[random]
                 F1(i64),
                 F2(bool),
             }
         "#,
         )
         .expect("Test failed");
-        let attrs = parse_attrs(&ast.attrs, Default::default());
-        assert_eq!(
-            attrs,
-            VariantAttrs {
-                try_from: None,
-                try_to: Default::default()
-            }
-        )
+        let ast_clone = ast.clone();
+        let attrs = parse_attrs(&mut ast.attrs);
+        assert!(!attrs);
+        assert_eq!(ast, ast_clone);
     }
 
+    /// Test that the top level macros are stripped when they
+    /// are processed.
     #[test]
-    fn parse_global_tryto() {
-        let ast: DeriveInput = parse_str(
+    fn test_strip_macros() {
+        let mut ast: DeriveInput = parse_str(
             r#"
-            #[TryTo(
-                Error: std::io::Error,
-                |e| Error::new(ErrorKind::Other, e.to_string())
-              )]
+            #[EnumConversion]
             #[DeriveTryFrom]
             enum Enum {
                 F1(i64),
+                #[DeriveTryFrom]
                 F2(bool),
             }
         "#,
         )
         .expect("Test failed.");
-        let attrs = parse_attrs(&ast.attrs, Default::default());
-        let expected = VariantAttrs {
-            try_from: Some(Default::default()),
-            try_to: ErrorConfig::Custom {
-                error_ty: "std :: io :: Error".to_string(),
-                map_err: "| e | Error :: new (ErrorKind :: Other , e . to_string ())".to_string(),
-            },
-        };
-        assert_eq!(attrs, expected);
-    }
-
-    #[test]
-    fn test_overwite_config() {
-        let ast: DeriveInput = parse_str(
+        assert!(parse_attrs(&mut ast.attrs));
+        let expected: DeriveInput = parse_str(
             r#"
-            #[TryTo(
-                Error: std::io::Error,
-                |e| Error::new(ErrorKind::Other, e.to_string())
-              )]
-            #[DeriveTryFrom]
+            #[EnumConversion]
             enum Enum {
                 F1(i64),
+                #[DeriveTryFrom]
                 F2(bool),
             }
         "#,
         )
-        .expect("Test failed.");
-        let global = VariantAttrs {
-            try_from: Some(ErrorConfig::Custom {
-                error_ty: "test".into(),
-                map_err: "test".into(),
-            }),
-            try_to: ErrorConfig::Custom {
-                error_ty: "test".into(),
-                map_err: "test".into(),
-            },
+        .expect("Test failed");
+        assert_eq!(ast, expected);
+    }
+
+    /// Test that providing no arguments to
+    /// `EnumConversion` returns the default
+    /// error config.
+    #[test]
+    fn test_default_error_config() {
+        let args = quote!();
+        let error_config = parse_custom_error_config(args);
+        assert_eq!(error_config, ErrorConfig::Default);
+    }
+
+    /// Test that arguments to the `EnumConversion` trait
+    /// get parsed correctly into an `ErrorConfig`.
+    #[test]
+    fn test_parse_custom_error_config() {
+        let args = quote!(Error: std::io::Error, |e| Error::new(
+            ErrorKind::Other,
+            e.to_string()
+        ));
+
+        let error_config = parse_custom_error_config(args);
+        let expected = ErrorConfig::Custom {
+            error_ty: "std :: io :: Error".to_string(),
+            map_err: "| e | Error :: new (ErrorKind :: Other , e . to_string ())".to_string(),
         };
-        let attrs = parse_attrs(&ast.attrs, global);
-        let expected = VariantAttrs {
-            try_from: Some(Default::default()),
-            try_to: ErrorConfig::Custom {
-                error_ty: "std :: io :: Error".to_string(),
-                map_err: "| e | Error :: new (ErrorKind :: Other , e . to_string ())".to_string(),
-            },
-        };
-        assert_eq!(attrs, expected);
+        assert_eq!(error_config, expected);
     }
 
     #[test]
     #[should_panic(
-        expected = "EnumConversion attribute macros expect either no arguments or exactly two of the form 'Error: Type' and a closure. Found '(Error : std :: io :: Error)'"
+        expected = "EnumConversion attribute macros expect either no arguments or exactly two of the form 'Error: Type' and a closure. Found 'Error : std :: io :: Error ,'"
     )]
     fn test_wrong_arg_number() {
-        let ast: DeriveInput = parse_str(
-            r#"
-            #[TryTo(
-                Error: std::io::Error
-              )]
-            #[DeriveTryFrom]
-            enum Enum {
-                F1(i64),
-                F2(bool),
-            }
-        "#,
-        )
-        .expect("Test failed.");
+        let args = quote!(Error: std::io::Error,);
 
-        _ = parse_attrs(&ast.attrs, Default::default());
+        _ = parse_custom_error_config(args);
     }
 
     #[test]
@@ -305,22 +269,9 @@ mod test_attrs {
         expected = "Attribute macros for EnumConversions must either be of the form: 'Error: Type' or a closure."
     )]
     fn test_non_closure() {
-        let ast: DeriveInput = parse_str(
-            r#"
-            #[TryTo(
-                Error: std::io::Error,
-                Vec::new
-              )]
-            #[DeriveTryFrom]
-            enum Enum {
-                F1(i64),
-                F2(bool),
-            }
-        "#,
-        )
-        .expect("Test failed.");
+        let args = quote!(Error: std::io::Error, Vec::new);
 
-        _ = parse_attrs(&ast.attrs, Default::default());
+        _ = parse_custom_error_config(args);
     }
 
     #[test]
@@ -328,42 +279,22 @@ mod test_attrs {
         expected = "EnumConversions expected 'Error: Type', found 'err : std :: io :: Error'"
     )]
     fn test_bad_key() {
-        let ast: DeriveInput = parse_str(
-            r#"
-            #[TryTo(
-                err: std::io::Error,
-                Vec::new
-              )]
-            #[DeriveTryFrom]
-            enum Enum {
-                F1(i64),
-                F2(bool),
-            }
-        "#,
-        )
-        .expect("Test failed.");
+        let args = quote!(err: std::io::Error, |e| Error::new(
+            ErrorKind::Other,
+            e.to_string()
+        ));
 
-        _ = parse_attrs(&ast.attrs, Default::default());
+        _ = parse_custom_error_config(args);
     }
 
     #[test]
     #[should_panic]
     fn test_non_error_type() {
-        let ast: DeriveInput = parse_str(
-            r#"
-            #[TryTo(
+        let args = quote!(
                 Error: || false,
-                Vec::new
-              )]
-            #[DeriveTryFrom]
-            enum Enum {
-                F1(i64),
-                F2(bool),
-            }
-        "#,
-        )
-        .expect("Test failed.");
+                |e| Error::new(ErrorKind::Other, e.to_string())
+        );
 
-        _ = parse_attrs(&ast.attrs, Default::default());
+        _ = parse_custom_error_config(args);
     }
 }

@@ -1,15 +1,20 @@
 use super::*;
-use crate::parse_attributes::VariantInfo;
+use crate::parse_attributes::{ErrorConfig, VariantInfo};
+use crate::parse_enum::ImplGenerics;
 
 /// Implement the helper trait `GetVariant`.
 pub(crate) fn impl_get_variant(
     name: &str,
     fullname: &str,
-    impl_generics: &str,
-    where_clause: &str,
+    impl_generics: &ImplGenerics,
     field_map: &HashMap<String, VariantInfo>,
     templater: &Tera,
 ) -> String {
+    let ImplGenerics {
+        impl_generics,
+        where_clause,
+        ..
+    } = impl_generics;
     let mut impl_string = String::new();
     for (field, VariantInfo { ty, .. }) in field_map.iter() {
         let mut context = Context::new();
@@ -36,17 +41,20 @@ pub(crate) fn impl_get_variant(
 pub(crate) fn impl_try_from(
     name: &str,
     fullname: &str,
-    impl_generics: &str,
-    impl_generics_ref: &str,
-    where_clause: &str,
+    impl_generics: &ImplGenerics,
+    error_config: &ErrorConfig,
     field_map: &HashMap<String, VariantInfo>,
     templater: &Tera,
 ) -> String {
+    let ImplGenerics {
+        impl_generics,
+        impl_generics_ref,
+        where_clause,
+    } = impl_generics;
     let mut impl_string = String::new();
+    let (error, _) = error_config.to_template();
     for (field, info) in field_map.iter() {
-        let (error, map) = if let Some(config) = &info.attrs.try_from {
-            config.to_template()
-        } else {
+        if !info.try_from {
             continue;
         };
         let mut where_string = where_clause.to_string();
@@ -75,7 +83,6 @@ pub(crate) fn impl_try_from(
         context.insert("fullname", fullname);
         context.insert("Where", &where_string);
         context.insert("Error", &error);
-        context.insert("Map_Err", &map);
         impl_string.push_str(
             &templater
                 .render("try_from", &context)
@@ -88,15 +95,19 @@ pub(crate) fn impl_try_from(
 pub(crate) fn impl_try_to(
     name: &str,
     fullname: &str,
-    impl_generics: &str,
-    impl_generics_ref: &str,
-    where_clause: &str,
+    impl_generics: &ImplGenerics,
+    error_config: &ErrorConfig,
     field_map: &HashMap<String, VariantInfo>,
     templater: &Tera,
 ) -> String {
+    let ImplGenerics {
+        impl_generics,
+        impl_generics_ref,
+        where_clause,
+    } = impl_generics;
     let mut impl_string = String::new();
+    let (error, map) = error_config.to_template();
     for (field, info) in field_map.iter() {
-        let (error, map) = &info.attrs.try_to.to_template();
         let mut where_string = where_clause.to_string();
         let marker_bound = if where_clause.is_empty() {
             format!(
@@ -135,11 +146,15 @@ pub(crate) fn impl_try_to(
 
 pub(crate) fn impl_from(
     fullname: &str,
-    where_clause: &str,
-    impl_generics: &str,
+    impl_generics: &ImplGenerics,
     field_map: &HashMap<String, VariantInfo>,
     templater: &Tera,
 ) -> String {
+    let ImplGenerics {
+        impl_generics,
+        where_clause,
+        ..
+    } = impl_generics;
     let mut impl_string = String::new();
     for (field, VariantInfo { ty, .. }) in field_map.iter() {
         let mut context = Context::new();
@@ -159,13 +174,14 @@ pub(crate) fn impl_from(
 
 #[cfg(test)]
 mod test_impls {
+    use quote::quote;
 
     use super::*;
     use crate::templates::templater;
 
     #[test]
     fn test_get_variant() {
-        let ast: DeriveInput = syn::parse_str(
+        let mut ast: DeriveInput = syn::parse_str(
             r#"
             enum Enum<'a, T>
             where
@@ -177,25 +193,18 @@ mod test_impls {
         )
         .expect("Test failed");
         let name = &ast.ident.to_string();
-        let (fullname, lifetimes) = fetch_name_with_generic_params(&ast);
-        let (impl_generics, _,  where_clause) = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifetimes);
-        let field_map = fetch_fields_from_enum(&ast);
+        let (fullname, lifetimes) = fetch_name_with_generic_params(&mut ast);
+        let impl_generics = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifetimes);
+        let field_map = fetch_fields_from_enum(&mut ast);
         let tera = templater();
-        let output = impl_get_variant(
-            &name,
-            &fullname,
-            &impl_generics,
-            &where_clause,
-            &field_map,
-            &tera,
-        );
+        let output = impl_get_variant(&name, &fullname, &impl_generics, &field_map, &tera);
         let expected = "\nimpl< 'a , T > enum_conversion_traits::GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field > for Enum<'a,T>\nwhere T : Debug {\n    #[allow(unreachable_patterns)]\n    fn get_variant(self) -> std::result::Result<Box < & 'a dyn Into < T > >, enum_conversion_traits::EnumConversionError> {\n        match self {\n            Enum::Field(inner) => Ok(inner),\n            _ => Err(enum_conversion_traits::EnumConversionError::new(\"Enum<'a,T>\", \"Box < & 'a dyn Into < T > >\"))\n        }\n    }\n\n    #[allow(unreachable_patterns)]\n    fn get_variant_ref(&self) -> std::result::Result<&Box < & 'a dyn Into < T > >, enum_conversion_traits::EnumConversionError> {\n        match &self {\n            Enum::Field(inner) => Ok(inner),\n            _ => Err(enum_conversion_traits::EnumConversionError::new(\"Enum<'a,T>\", \"Box < & 'a dyn Into < T > >\"))\n        }\n    }\n\n    #[allow(unreachable_patterns)]\n    fn get_variant_mut(&mut self) -> std::result::Result<&mut Box < & 'a dyn Into < T > >, enum_conversion_traits::EnumConversionError> {\n        match self {\n            Enum::Field(inner) => Ok(inner),\n            _  => Err(enum_conversion_traits::EnumConversionError::new(\"Enum<'a,T>\", \"Box < & 'a dyn Into < T > >\"))\n        }\n    }\n}\n";
         assert_eq!(output, expected);
     }
 
     #[test]
     fn test_try_from_off() {
-        let ast: DeriveInput = syn::parse_str(
+        let mut ast: DeriveInput = syn::parse_str(
             r#"
             enum Enum<'a, T>
             where
@@ -207,16 +216,16 @@ mod test_impls {
         )
         .expect("Test failed");
         let name = &ast.ident.to_string();
+        let error_config = ErrorConfig::default();
         let (fullname, lifetimes) = fetch_name_with_generic_params(&ast);
-        let (impl_generics, impl_generics_ref, where_clause) = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifetimes);
-        let field_map = fetch_fields_from_enum(&ast);
+        let impl_generics = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifetimes);
+        let field_map = fetch_fields_from_enum(&mut ast);
         let tera = templater();
         let output = impl_try_from(
             &name,
             &fullname,
             &impl_generics,
-            &impl_generics_ref,
-            &where_clause,
+            &error_config,
             &field_map,
             &tera,
         );
@@ -225,12 +234,13 @@ mod test_impls {
 
     #[test]
     fn test_try_from_on() {
-        let ast: DeriveInput = syn::parse_str(
+        let mut ast: DeriveInput = syn::parse_str(
             r#"
-            #[DeriveTryFrom(
+            #[EnumConversion(
                 Error: Box<dyn Error + 'static>,
                 |e| e.to_string().into()
             )]
+            #[DeriveTryFrom]
             enum Enum<'a, T>
             where
                 T: Debug
@@ -241,26 +251,29 @@ mod test_impls {
         )
         .expect("Test failed");
         let name = &ast.ident.to_string();
+        let error_config =
+            parse_custom_error_config(quote!(Error: Box<dyn Error + 'static>, |e| e
+                .to_string()
+                .into()));
         let (fullname, lifetimes) = fetch_name_with_generic_params(&ast);
-        let (impl_generics, impl_generics_ref, where_clause) = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifetimes);
-        let field_map = fetch_fields_from_enum(&ast);
+        let impl_generics = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifetimes);
+        let field_map = fetch_fields_from_enum(&mut ast);
         let tera = templater();
         let output = impl_try_from(
             &name,
             &fullname,
             &impl_generics,
-            &impl_generics_ref,
-            &where_clause,
+            &error_config,
             &field_map,
             &tera,
         );
-        let expected = "\nimpl< 'a , T > TryFrom<Enum<'a,T>> for Box < & 'a dyn Into < T > >\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_from(value: Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to().map_err(| e | e . to_string () . into ())\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryFrom<&'enum_conv Enum<'a,T>> for &'enum_conv Box < & 'a dyn Into < T > >\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_from(value: &'enum_conv Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to().map_err(| e | e . to_string () . into ())\n\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryFrom<&'enum_conv mut Enum<'a,T>> for &'enum_conv mut Box < & 'a dyn Into < T > >\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_from(value: &'enum_conv mut Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to().map_err(| e | e . to_string () . into ())\n    }\n}\n";
+        let expected = "\nimpl< 'a , T > TryFrom<Enum<'a,T>> for Box < & 'a dyn Into < T > >\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_from(value: Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to()\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryFrom<&'enum_conv Enum<'a,T>> for &'enum_conv Box < & 'a dyn Into < T > >\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_from(value: &'enum_conv Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to()\n\n    }\n}\n\nimpl< 'a , 'enum_conv : 'a , T , > TryFrom<&'enum_conv mut Enum<'a,T>> for &'enum_conv mut Box < & 'a dyn Into < T > >\nwhere T : Debug,\n Enum<'a,T>: GetVariant<Box < & 'a dyn Into < T > >, enum___conversion___Enum::Field>\n{\n    type Error = Box < dyn Error + 'static >;\n\n    fn try_from(value: &'enum_conv mut Enum<'a,T>) -> std::result::Result<Self, Self::Error> {\n        value.try_to()\n    }\n}\n";
         assert_eq!(output, expected);
     }
 
     #[test]
     fn test_try_from_partial() {
-        let ast: DeriveInput = syn::parse_str(
+        let mut ast: DeriveInput = syn::parse_str(
             r#"
             enum Enum<'a, T>
             where
@@ -274,16 +287,16 @@ mod test_impls {
         )
         .expect("Test failed");
         let name = &ast.ident.to_string();
+        let error_config = ErrorConfig::default();
         let (fullname, lifetimes) = fetch_name_with_generic_params(&ast);
-        let (impl_generics, impl_generics_ref, where_clause) = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifetimes);
-        let field_map = fetch_fields_from_enum(&ast);
+        let impl_generics = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifetimes);
+        let field_map = fetch_fields_from_enum(&mut ast);
         let tera = templater();
         let output = impl_try_from(
             &name,
             &fullname,
             &impl_generics,
-            &impl_generics_ref,
-            &where_clause,
+            &error_config,
             &field_map,
             &tera,
         );
@@ -293,7 +306,7 @@ mod test_impls {
 
     #[test]
     fn test_from() {
-        let ast: DeriveInput = syn::parse_str(
+        let mut ast: DeriveInput = syn::parse_str(
             r#"
             enum Enum<'a, T>
             where
@@ -305,17 +318,17 @@ mod test_impls {
         )
         .expect("Test failed");
         let (fullname, lifeftimes) = fetch_name_with_generic_params(&ast);
-        let (impl_generics, _, where_clause) = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifeftimes);
-        let field_map = fetch_fields_from_enum(&ast);
+        let impl_generics = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifeftimes);
+        let field_map = fetch_fields_from_enum(&mut ast);
         let tera = templater();
-        let output = impl_from(&fullname, &where_clause, &impl_generics, &field_map, &tera);
+        let output = impl_from(&fullname, &impl_generics, &field_map, &tera);
         let expected = "\nimpl< 'a , T > From<Box < & 'a dyn Into < T > >> for Enum<'a,T>\nwhere T : Debug\n{\n    fn from(value: Box < & 'a dyn Into < T > >) -> Self {\n        Self::Field(value)\n    }\n}\n";
         assert_eq!(output, expected);
     }
 
     #[test]
     fn test_try_to() {
-        let ast: DeriveInput = syn::parse_str(
+        let mut ast: DeriveInput = syn::parse_str(
             r#"
             enum Enum<'a, T>
             where
@@ -328,15 +341,15 @@ mod test_impls {
         .expect("Test failed");
         let name = ast.ident.to_string();
         let (fullname, lifetimes) = fetch_name_with_generic_params(&ast);
-        let (impl_generics, impl_generics_ref, where_clause) = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifetimes);
-        let field_map = fetch_fields_from_enum(&ast);
+        let error_config = ErrorConfig::default();
+        let impl_generics = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifetimes);
+        let field_map = fetch_fields_from_enum(&mut ast);
         let tera = templater();
         let output = impl_try_to(
             &name,
             &fullname,
             &impl_generics,
-            &impl_generics_ref,
-            &where_clause,
+            &error_config,
             &field_map,
             &tera,
         );
@@ -346,9 +359,9 @@ mod test_impls {
 
     #[test]
     fn test_try_to_custom() {
-        let ast: DeriveInput = syn::parse_str(
+        let mut ast: DeriveInput = syn::parse_str(
             r#"
-          #[TryTo(
+          #[EnumConversion(
                 Error: Box<dyn Error + 'static>,
                 |e| e.to_string().into()
             )]
@@ -362,16 +375,19 @@ mod test_impls {
         )
         .expect("Test failed");
         let name = ast.ident.to_string();
+        let error_config =
+            parse_custom_error_config(quote!(Error: Box<dyn Error + 'static>, |e| e
+                .to_string()
+                .into()));
         let (fullname, lifetimes) = fetch_name_with_generic_params(&ast);
-        let (impl_generics, impl_generics_ref, where_clause) = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifetimes);
-        let field_map = fetch_fields_from_enum(&ast);
+        let impl_generics = fetch_impl_generics(&ast, ENUM_CONV_LIFETIME, &lifetimes);
+        let field_map = fetch_fields_from_enum(&mut ast);
         let tera = templater();
         let output = impl_try_to(
             &name,
             &fullname,
             &impl_generics,
-            &impl_generics_ref,
-            &where_clause,
+            &error_config,
             &field_map,
             &tera,
         );

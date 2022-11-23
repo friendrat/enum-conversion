@@ -1,6 +1,4 @@
 pub mod prelude {
-    pub mod advanced {
-        pub use enum_conversion_traits::*;
-        pub use enum_conversion_derive::EnumConversions;
-    }
+    pub use enum_conversion_derive::{DeriveTryFrom, EnumConversions};
+    pub use enum_conversion_traits::*;
 }
