@@ -104,8 +104,6 @@ mod test_derive_errors {
     }
 }
 
-
-
 /// Tests that the derive macro correctly panics (thereby failing compilation) for the correct
 /// cases.
 #[cfg(test)]
