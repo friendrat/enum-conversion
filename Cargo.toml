@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Jacob Turner <jacob@friendrat.com> "]
 readme = "README.md"
 description = "A set of traits and macros for deriving conversion traits between enums and the types in their variants."
-license = "GNU General Public Licence v3.0"
+license = "GPL-2.0-or-later"
 categories = ["development-tools", "rust-patterns"]
 build = false
 
